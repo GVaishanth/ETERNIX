@@ -1,0 +1,87 @@
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0f14;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+canvas {
+  display: block;
+}
+
+.hud {
+  position: fixed;
+  left: 20px;
+  bottom: 18px;
+  color: #ffffff;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  user-select: none;
+}
+
+.hud-speed {
+  font-size: 44px;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-unit {
+  font-size: 16px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.hud-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.debug-panel {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  width: 320px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #d7f7d0;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  pointer-events: none;
+}
+
+.debug-title {
+  color: #ffd166;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.debug-section {
+  margin-top: 6px;
+  color: #8ecae6;
+  font-weight: 700;
+}
+
+.debug-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.debug-row > span:last-child {
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.debug-error {
+  color: #ff8a80;
+  overflow-wrap: anywhere;
+}
