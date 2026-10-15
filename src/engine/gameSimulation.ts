@@ -1,8 +1,9 @@
 import type { VehicleConfig } from '../config/vehicleConfig';
 import { FIXED_STEP_SECONDS, MAX_FRAME_SECONDS, MAX_SUBSTEPS_PER_FRAME, VEHICLE_SPAWN, VEHICLE_SPAWN_YAW_RADIANS } from '../config/simulationConfig';
-import { shortestAngleDelta, wrapAngle, lerp } from '../core/math';
-import type { InputState, VehicleState } from '../core/types';
-import { createVehicleState, stepVehicle } from '../simulation/vehicle';
+import { lerp } from '../core/math';
+import type { BodyState, InputState, VehicleState } from '../core/types';
+import { createBodyState, stepBody } from '../simulation/bodyState';
+import { createVehicleState, interpolateVehicleState, stepVehicle } from '../simulation/vehicle';
 import { planFixedSteps } from './fixedStep';
 
 /**
@@ -14,6 +15,8 @@ export class GameSimulation {
   private readonly config: VehicleConfig;
   private previous: VehicleState;
   private current: VehicleState;
+  private previousBody: BodyState = createBodyState();
+  private currentBody: BodyState = createBodyState();
   private accumulatorSeconds = 0;
   private alpha = 0;
   private stepTotal = 0;
@@ -39,6 +42,8 @@ export class GameSimulation {
     for (let i = 0; i < plan.steps; i += 1) {
       this.previous = this.current;
       this.current = stepVehicle(this.current, input, this.config, FIXED_STEP_SECONDS);
+      this.previousBody = this.currentBody;
+      this.currentBody = stepBody(this.currentBody, this.current, this.config, FIXED_STEP_SECONDS);
     }
 
     this.accumulatorSeconds = plan.accumulatorSeconds;
@@ -52,6 +57,8 @@ export class GameSimulation {
     const spawn = createVehicleState(VEHICLE_SPAWN, VEHICLE_SPAWN_YAW_RADIANS);
     this.previous = spawn;
     this.current = spawn;
+    this.previousBody = createBodyState();
+    this.currentBody = createBodyState();
     this.accumulatorSeconds = 0;
     this.alpha = 0;
   }
@@ -63,20 +70,27 @@ export class GameSimulation {
 
   /** Interpolated state between the last two steps. Use for rendering only. */
   getRenderState(): VehicleState {
+    return interpolateVehicleState(this.previous, this.current, this.alpha);
+  }
+
+  /** Interpolated cosmetic body state. Use for rendering only. Never feeds back into the vehicle. */
+  getRenderBody(): BodyState {
     const a = this.alpha;
-    const p = this.previous;
-    const c = this.current;
+    const p = this.previousBody;
+    const c = this.currentBody;
     return {
-      position: {
-        x: lerp(p.position.x, c.position.x, a),
-        y: lerp(p.position.y, c.position.y, a),
-        z: lerp(p.position.z, c.position.z, a),
-      },
-      yaw: wrapAngle(p.yaw + shortestAngleDelta(p.yaw, c.yaw) * a),
-      speed: lerp(p.speed, c.speed, a),
-      steerAngle: lerp(p.steerAngle, c.steerAngle, a),
-      yawRate: lerp(p.yawRate, c.yawRate, a),
+      pitch: lerp(p.pitch, c.pitch, a),
+      pitchRate: lerp(p.pitchRate, c.pitchRate, a),
+      roll: lerp(p.roll, c.roll, a),
+      rollRate: lerp(p.rollRate, c.rollRate, a),
+      heave: lerp(p.heave, c.heave, a),
+      heaveRate: lerp(p.heaveRate, c.heaveRate, a),
     };
+  }
+
+  /** Latest simulated body state. For diagnostics. */
+  get body(): BodyState {
+    return this.currentBody;
   }
 
   get stepCount(): number {

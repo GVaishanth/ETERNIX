@@ -27,7 +27,7 @@ export function App() {
         dpr={[1, 2]}
         gl={{ antialias: true }}
         camera={{
-          fov: CHASE_CAMERA_CONFIG.fovDegrees,
+          fov: CHASE_CAMERA_CONFIG.fovBaseDegrees,
           near: CHASE_CAMERA_CONFIG.nearMeters,
           far: CHASE_CAMERA_CONFIG.farMeters,
           position: [0, CHASE_CAMERA_CONFIG.heightMeters, 8],

@@ -20,6 +20,8 @@ export interface VehiclePart {
   radius?: number;
   /** Which side the part is on. Used for symmetry checks. */
   side: 'left' | 'right' | 'center';
+  /** Which axle a wheel belongs to. Only set for wheels. Front wheels steer. */
+  axle?: 'front' | 'rear';
 }
 
 export interface VehicleLayout {
@@ -42,6 +44,14 @@ const LIGHT_HEIGHT_FRACTION = 0.6;
 const LIGHT_INSET_METERS = 0.3;
 const INDICATOR_INSET_METERS = 0.05;
 const LIGHT_DEPTH_METERS = 0.03;
+
+/**
+ * Pivot for the cosmetic body (pitch, roll, heave), in simulation space. It sits at the wheelbase midpoint, at
+ * wheel-center height. Body parts are placed relative to it. Wheels are NOT inside this pivot.
+ */
+export function bodyPivotPosition(config: VehicleConfig): Vec3 {
+  return { x: 0, y: config.wheelRadiusMeters, z: config.wheelbaseMeters / 2 };
+}
 
 export function buildVehicleLayout(config: VehicleConfig): VehicleLayout {
   const { wheelbaseMeters: wheelbase, trackWidthMeters: track, bodyLengthMeters: length } = config;
@@ -151,6 +161,7 @@ export function buildVehicleLayout(config: VehicleConfig): VehicleLayout {
         size: { x: WHEEL_WIDTH_METERS, y: wheelRadius * 2, z: wheelRadius * 2 },
         radius: wheelRadius,
         side,
+        axle: axle.label === 'Front' ? 'front' : 'rear',
       });
     }
   }
@@ -158,7 +169,7 @@ export function buildVehicleLayout(config: VehicleConfig): VehicleLayout {
   return { parts, frontZ, rearZ, roofY };
 }
 
-function sideLabel(side: 'left' | 'right'): string {
+export function sideLabel(side: 'left' | 'right'): string {
   return side === 'left' ? 'Left' : 'Right';
 }
 

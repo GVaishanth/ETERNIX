@@ -26,7 +26,7 @@ function flag(value: boolean): string {
 }
 
 export function formatSnapshot(snapshot: DiagnosticsSnapshot): DebugSection[] {
-  const { renderer, camera, vehicle, input, control, physics, assets, visibility } = snapshot;
+  const { renderer, camera, vehicle, body, input, control, physics, assets, visibility } = snapshot;
   return [
     {
       title: 'Renderer',
@@ -43,6 +43,7 @@ export function formatSnapshot(snapshot: DiagnosticsSnapshot): DebugSection[] {
         { label: 'active', value: camera.name },
         { label: 'position', value: vec(camera.positionSim) },
         { label: 'look at', value: vec(camera.targetSim) },
+        { label: 'heading lag (deg)', value: fixed(camera.headingLagDegrees, 2) },
         { label: 'fov / near / far', value: `${fixed(camera.fovDegrees, 0)} / ${fixed(camera.nearMeters, 1)} / ${fixed(camera.farMeters, 0)}` },
       ],
     },
@@ -56,6 +57,19 @@ export function formatSnapshot(snapshot: DiagnosticsSnapshot): DebugSection[] {
         { label: 'speed', value: `${fixed(vehicle.speedKph, 1)} km/h (${fixed(vehicle.speedMps, 2)} m/s)` },
         { label: 'wheel angle (deg)', value: fixed(vehicle.steerAngleDegrees, 1) },
         { label: 'yaw rate (deg/s)', value: fixed(vehicle.yawRateDegPerSec, 1) },
+        { label: 'lateral speed (m/s)', value: fixed(vehicle.lateralSpeedMps, 2) },
+        { label: 'slip angle (deg)', value: fixed(vehicle.slipAngleDegrees, 1) },
+        { label: 'drifting', value: flag(vehicle.drifting) },
+        { label: 'accel long / lat (m/s2)', value: `${fixed(vehicle.longitudinalAccel, 2)} / ${fixed(vehicle.lateralAccel, 2)}` },
+        { label: 'pedals thr / brk / hb', value: `${fixed(vehicle.throttlePedal, 2)} / ${fixed(vehicle.brakePedal, 2)} / ${fixed(vehicle.handbrakeLevel, 2)}` },
+        { label: 'wheel spin (deg)', value: fixed(vehicle.wheelSpinDegrees, 0) },
+      ],
+    },
+    {
+      title: 'Body (cosmetic)',
+      rows: [
+        { label: 'pitch / roll (deg)', value: `${fixed(body.pitchDegrees, 2)} / ${fixed(body.rollDegrees, 2)}` },
+        { label: 'heave (m)', value: fixed(body.heaveMeters, 3) },
       ],
     },
     {

@@ -1,6 +1,7 @@
 import { Box3, Frustum, PerspectiveCamera, Vector3, type Group, type WebGLRenderer } from 'three';
-import { createChaseCameraState, updateChaseCamera, type ChaseCameraState } from '../camera/chaseCamera';
+import { createChaseCameraState, speedFraction, updateChaseCamera, type ChaseCameraState } from '../camera/chaseCamera';
 import { CHASE_CAMERA_CONFIG } from '../config/cameraConfig';
+import { VEHICLE_CONFIG } from '../config/vehicleConfig';
 import {
   DIAGNOSTICS_PUBLISH_INTERVAL_SECONDS,
   FIXED_STEP_SECONDS,
@@ -10,8 +11,8 @@ import {
   ROAD_CHECK_BEHIND_METERS,
   VISIBILITY_CHECK_INTERVAL_SECONDS,
 } from '../config/simulationConfig';
-import type { InputState, VehicleState } from '../core/types';
-import { metersPerSecondToKph } from '../core/units';
+import type { InputState } from '../core/types';
+import { metersPerSecondToKph, metersPerSecondToMph } from '../core/units';
 import { GameSimulation } from '../engine/gameSimulation';
 import type { GameAction } from '../input/keyBindings';
 import type { InputController } from '../input/inputController';
@@ -19,9 +20,10 @@ import { useAppStore } from '../state/appStore';
 import { useDiagnosticsStore } from '../diagnostics/diagnosticsStore';
 import { buildDiagnosticsSnapshot, PHYSICS_MODE_LABEL, type RendererStatus } from '../diagnostics/snapshot';
 import { isBoundsInFrustum, updateFrustumFromCamera } from '../diagnostics/visibility';
-import { getDriveDirection } from '../simulation/vehicle';
+import { getDriveDirection, isDrifting } from '../simulation/vehicle';
 import { getRoadSegmentBoundsSim } from '../world/roadLayout';
 import { renderBoundsFromSim, setRenderVector } from './renderSpace';
+import { applyVehicleRig, resolveVehicleRig, type VehicleRig } from './vehicleRig';
 
 /*
  * The per-frame orchestration for the single authoritative game loop. Each tick:
@@ -61,12 +63,6 @@ function clampFrameSeconds(deltaSeconds: number): number {
   return Math.min(deltaSeconds, MAX_FRAME_SECONDS);
 }
 
-function applyPoseToVehicle(group: Group | null, pose: VehicleState): void {
-  if (!group) return;
-  group.position.set(pose.position.x, pose.position.y, pose.position.z);
-  group.rotation.set(0, pose.yaw, 0);
-}
-
 function rendererStatusFrom(renderer: WebGLRenderer, frameCount: number): RendererStatus {
   const gl = renderer.getContext();
   const isWebGL2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
@@ -87,6 +83,8 @@ export class RenderLoop {
   private readonly vehicleBounds = new Box3();
   private readonly roadBounds = new Box3();
   private readonly cameraTarget = new Vector3();
+  private rigRoot: Group | null = null;
+  private rig: VehicleRig | null = null;
   private vehicleInFrustum = false;
   private roadInFrustum = false;
   private frameCount = 0;
@@ -113,9 +111,15 @@ export class RenderLoop {
     }
     const pose = this.simulation.getRenderState();
 
-    applyPoseToVehicle(vehicle, pose);
+    const rig = this.resolveRig(vehicle);
+    if (rig) applyVehicleRig(rig, pose, this.simulation.getRenderBody());
+
     // A zero step while paused freezes the camera. Reset snaps it because `initialized` was cleared.
-    updateChaseCamera(this.chase, pose, CHASE_CAMERA_CONFIG, paused ? 0 : frameSeconds);
+    updateChaseCamera(this.chase, pose, CHASE_CAMERA_CONFIG, VEHICLE_CONFIG.maxForwardSpeedMps, paused ? 0 : frameSeconds);
+    if (camera.fov !== this.chase.fovDegrees) {
+      camera.fov = this.chase.fovDegrees;
+      camera.updateProjectionMatrix();
+    }
     setRenderVector(camera.position, this.chase.position);
     camera.lookAt(setRenderVector(this.cameraTarget, this.chase.target));
 
@@ -131,6 +135,15 @@ export class RenderLoop {
     this.frameCount += 1;
   }
 
+  /** Resolves the named rig nodes once per vehicle root. Never called per node per frame. */
+  private resolveRig(root: Group | null): VehicleRig | null {
+    if (root !== this.rigRoot) {
+      this.rigRoot = root;
+      this.rig = root ? resolveVehicleRig(root) : null;
+    }
+    return this.rig;
+  }
+
   private handleAction(action: GameAction): void {
     switch (action) {
       case 'pause':
@@ -138,6 +151,7 @@ export class RenderLoop {
         break;
       case 'reset':
         this.simulation.reset();
+        // The camera snaps on the next frame. Its heading, lag, and FOV reset with it.
         this.chase.initialized = false;
         // Show the reset speed on the next frame, not after the normal HUD interval.
         this.timers.hud = HUD_PUBLISH_INTERVAL_SECONDS;
@@ -159,7 +173,10 @@ export class RenderLoop {
     const state = this.simulation.state;
     useAppStore.getState().setHud({
       speedKph: Math.abs(metersPerSecondToKph(state.speed)),
+      speedMph: Math.abs(metersPerSecondToMph(state.speed)),
+      speedFraction: speedFraction(state.speed, VEHICLE_CONFIG.maxForwardSpeedMps),
       direction: getDriveDirection(state.speed),
+      drifting: isDrifting(state, VEHICLE_CONFIG),
     });
   }
 
@@ -194,6 +211,8 @@ export class RenderLoop {
         cameraFar: camera.far,
         chase: this.chase,
         vehicle: authoritative,
+        body: this.simulation.body,
+        drifting: isDrifting(authoritative, VEHICLE_CONFIG),
         input: inputState,
         pressedKeys: this.input.pressedKeys,
         paused,

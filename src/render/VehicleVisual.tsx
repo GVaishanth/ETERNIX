@@ -1,13 +1,20 @@
 import { forwardRef, useMemo } from 'react';
 import type { Group } from 'three';
 import type { VehicleConfig } from '../config/vehicleConfig';
-import { buildVehicleLayout, type VehiclePart, type VehiclePartKind } from './vehicleLayout';
+import type { Vec3 } from '../core/types';
+import { bodyPivotPosition, buildVehicleLayout, type VehiclePart, type VehiclePartKind } from './vehicleLayout';
 
 /*
- * Procedural car visual. Built from buildVehicleLayout(), which is in simulation space with the nose at +Z.
- * The parent group (owned by the render loop) sets position and yaw each frame. The visual itself
- * is NOT rotated here: the simulation-to-render mirror lives in SimRoot, so this model matches
- * the simulation directly. Replace the procedural parts with a real model in the asset phase.
+ * Procedural car visual. Built in SIMULATION space with the nose at +Z. The parent group (owned by the render
+ * loop) sets position and yaw each frame. The mirror lives in SimRoot, so this model matches the simulation.
+ *
+ * Node hierarchy (names are resolved once by vehicleRig.ts, never by per-frame lookups):
+ *   PlayerVehicle                      position and yaw (written by the render loop)
+ *   ├── BodyPivot                      cosmetic pitch, roll, and heave. Body parts live here.
+ *   ├── WheelSteer<Axle><Side>         front wheels yaw with the steer angle. Rear wheels stay fixed.
+ *   │   └── WheelSpin<Axle><Side>      rolls about the axle with distance traveled. Holds the tire and spokes.
+ *
+ * Body and wheels are siblings under the root, so suspension effects never change the vehicle's transform.
  */
 
 const MATERIAL: Record<VehiclePartKind, { color: string; roughness: number; emissive?: string; emissiveIntensity?: number }> = {
@@ -20,38 +27,41 @@ const MATERIAL: Record<VehiclePartKind, { color: string; roughness: number; emis
   wheel: { color: '#0d0d0d', roughness: 0.9 },
 };
 
+const HUB_COLOR = '#9aa3ab';
+const SPOKE_COLOR = '#e8ecef';
+
 interface VehicleVisualProps {
   config: VehicleConfig;
 }
 
 export const VehicleVisual = forwardRef<Group, VehicleVisualProps>(function VehicleVisual({ config }, ref) {
   const layout = useMemo(() => buildVehicleLayout(config), [config]);
+  const pivot = useMemo(() => bodyPivotPosition(config), [config]);
+  const bodyParts = layout.parts.filter((part) => part.kind !== 'wheel');
+  const wheelParts = layout.parts.filter((part) => part.kind === 'wheel');
 
   return (
     <group ref={ref} name="PlayerVehicle">
-      {layout.parts.map((part) => (
-        <VehiclePartMesh key={part.name} part={part} />
+      <group name="BodyPivot" position={[pivot.x, pivot.y, pivot.z]}>
+        {bodyParts.map((part) => (
+          <VehiclePartMesh key={part.name} part={part} pivot={pivot} />
+        ))}
+      </group>
+      {wheelParts.map((part) => (
+        <WheelAssembly key={part.name} part={part} radius={config.wheelRadiusMeters} />
       ))}
     </group>
   );
 });
 
-function VehiclePartMesh({ part }: { part: VehiclePart }) {
+function VehiclePartMesh({ part, pivot }: { part: VehiclePart; pivot: Vec3 }) {
   const material = MATERIAL[part.kind];
   const { center } = part;
-
-  if (part.kind === 'wheel') {
-    // The cylinder's axis is along Y by default. Rotating it about Z puts the axis along X (the axle direction).
-    return (
-      <mesh name={part.name} position={[center.x, center.y, center.z]} rotation={[0, 0, Math.PI / 2]}>
-        <cylinderGeometry args={[part.radius ?? 0.3, part.radius ?? 0.3, part.size.x, 16]} />
-        <meshStandardMaterial color={material.color} roughness={material.roughness} />
-      </mesh>
-    );
-  }
+  // Positions are relative to the body pivot, so the parts move with the pivot.
+  const local: [number, number, number] = [center.x - pivot.x, center.y - pivot.y, center.z - pivot.z];
 
   return (
-    <mesh name={part.name} position={[center.x, center.y, center.z]}>
+    <mesh name={part.name} position={local}>
       <boxGeometry args={[part.size.x, part.size.y, part.size.z]} />
       <meshStandardMaterial
         color={material.color}
@@ -60,5 +70,37 @@ function VehiclePartMesh({ part }: { part: VehiclePart }) {
         emissiveIntensity={material.emissiveIntensity ?? 0}
       />
     </mesh>
+  );
+}
+
+/** One wheel: a steer group at the hub, a spin group inside it, and the tire, hub, and spoke meshes. */
+function WheelAssembly({ part, radius }: { part: VehiclePart; radius: number }) {
+  const { center } = part;
+  const suffix = part.name.slice('Wheel'.length);
+  const width = part.size.x;
+  const steered = part.axle === 'front';
+  const outward = part.side === 'left' ? -1 : 1;
+  const hubOffset = width / 2 + 0.006;
+  const spokeOffset = width / 2 + 0.012;
+
+  return (
+    <group name={`WheelSteer${suffix}`} position={[center.x, center.y, center.z]} userData={{ steered }}>
+      <group name={`WheelSpin${suffix}`}>
+        {/* The cylinder's axis is along Y by default. Rotating it about Z puts the axis along X (the axle). */}
+        <mesh name={part.name} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[radius, radius, width, 20]} />
+          <meshStandardMaterial color={MATERIAL.wheel.color} roughness={MATERIAL.wheel.roughness} />
+        </mesh>
+        <mesh rotation={[0, 0, Math.PI / 2]} position={[outward * hubOffset, 0, 0]}>
+          <cylinderGeometry args={[radius * 0.55, radius * 0.55, 0.01, 16]} />
+          <meshStandardMaterial color={HUB_COLOR} roughness={0.4} metalness={0.3} />
+        </mesh>
+        {/* A bright spoke on the outer face. It makes the wheel rotation visible. */}
+        <mesh position={[outward * spokeOffset, 0, 0]}>
+          <boxGeometry args={[0.012, radius * 1.7, 0.05]} />
+          <meshStandardMaterial color={SPOKE_COLOR} roughness={0.35} />
+        </mesh>
+      </group>
+    </group>
   );
 }

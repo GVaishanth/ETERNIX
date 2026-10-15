@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { VEHICLE_CONFIG } from '../config/vehicleConfig';
-import { buildVehicleLayout, type VehiclePart } from './vehicleLayout';
+import { bodyPivotPosition, buildVehicleLayout, type VehiclePart } from './vehicleLayout';
 
 const layout = buildVehicleLayout(VEHICLE_CONFIG);
 const byName = (name: string): VehiclePart => {
@@ -82,5 +82,21 @@ describe('vehicle layout symmetry', () => {
       expect(a.center.y).toBeCloseTo(b.center.y, 9);
       expect(a.center.z).toBeCloseTo(b.center.z, 9);
     }
+  });
+});
+
+describe('vehicle layout axles and pivot', () => {
+  it('tags front wheels as steered and rear wheels as fixed', () => {
+    expect(byName('WheelFrontLeft').axle).toBe('front');
+    expect(byName('WheelFrontRight').axle).toBe('front');
+    expect(byName('WheelRearLeft').axle).toBe('rear');
+    expect(byName('WheelRearRight').axle).toBe('rear');
+  });
+
+  it('places the cosmetic body pivot at the wheelbase midpoint, at wheel-center height', () => {
+    const pivot = bodyPivotPosition(VEHICLE_CONFIG);
+    expect(pivot.z).toBeCloseTo(VEHICLE_CONFIG.wheelbaseMeters / 2, 9);
+    expect(pivot.y).toBeCloseTo(VEHICLE_CONFIG.wheelRadiusMeters, 9);
+    expect(pivot.x).toBe(0);
   });
 });

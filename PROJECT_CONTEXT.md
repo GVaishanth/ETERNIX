@@ -8,7 +8,7 @@ A browser-based 3D open-world street racing game inspired by Need for Speed: Mos
 The goal of the whole project is a stable, extensible foundation for later phases: vehicle handling,
 world content, traffic, police AI, progression, UI, audio, and presentation.
 
-**Current phase: Part 1 (first playable driving scene), built on Phase 0.** The scene has a procedural
+**Current phase: Part 2 (driving quality), built on Part 1 and Phase 0.** The scene has a procedural
 car, a two-lane road with markings, shoulders, roadside props, a chase camera, a small HUD, and keyboard
 driving with pause and reset. Traffic, police, a city, progression, and purchasing are out of scope and
 do not exist yet. Part 2 has not been started.
@@ -160,18 +160,40 @@ Rules:
   Each frame delta is applied once, through the accumulator. It is never multiplied by dt a second time.
 - **Interpolation:** rendering uses `lerp(previous, current, alpha)`. Yaw uses the shortest angular path.
 - **React never drives simulation.** HUD and diagnostics values are published to stores at low rates.
-- **Vehicle model:** kinematic bicycle in the ground plane (`simulation/vehicle.ts`).
-  - Steering: the front-wheel angle moves toward `steer × maxSteer(speed)` at a limited rate.
-    `maxSteer` tapers from 100% at standstill to 50% at top speed. This is **speed-sensitive: there is no
-    rotation at standstill**.
-  - Yaw rate: `clamp(v·tan(δ)/L, ±a_lat_max/|v|)`, with `a_lat_max = 14 m/s²`.
-  - Longitudinal:
-    - Throttle accelerates forward with headroom taper toward 62 m/s.
-    - Brake decelerates forward to exactly 0, then reverses at 4 m/s² when held at standstill (up to 12 m/s).
-    - Throttle while reversing brakes to 0.
-    - Handbrake decelerates to 0 at 12 m/s², overrides throttle and reverse, and holds the car at 0.
-    - Coasting decelerates at 1.2 m/s² when no drive input is held.
-  - Drive direction readout: `drive` above 0.1 m/s forward, `reverse` below −0.1 m/s, `neutral` otherwise.
+- **Vehicle model (Part 2):** one movement system, `simulation/vehicle.ts` `stepVehicle()`. No physics engine
+  is installed, and no second movement system exists. Tuning lives in `config/vehicleConfig.ts`.
+  - **State:** `position` (rear axle, ground plane), `yaw`, signed `speed` (forward), `lateralSpeed` (right is +),
+    `steerAngle`, `yawRate`, pedal levels (`throttlePedal`, `brakePedal`, `handbrakeLevel`), `longitudinalAccel`,
+    `lateralAccel`, and `wheelSpin`. Plus a separate cosmetic `BodyState`. Velocity is never stored in world space.
+  - **Pedals:** the throttle rises at 3.0/s and releases at 5.0/s. The brake rises at 6/s and releases at 8/s. Brake
+    overrides throttle when both are held. The handbrake overrides both.
+  - **Longitudinal:** engine `a = 9·(1 − v/79.4)·throttle`. Rolling resistance 1.2 m/s² plus aero `0.0002·v²` oppose
+    motion. Forward brake is 18 m/s², and it stops exactly at zero. Reverse starts only at standstill with brake held
+    (4 m/s², cap 12 m/s). Throttle while reversing brakes at 18 m/s². Hard forward cap 62 m/s. The equilibrium is about
+    62 m/s, which the tests verify. The handbrake decelerates at **6 m/s²** (Part 1 used 12; see section 13).
+  - **Steering:** the commanded angle is `steer × lerp(0.55, 0.20 rad, |v|/62)`. The front-wheel angle moves toward it at
+    2.8 rad/s. Standstill has no rotation.
+  - **Yaw:** the kinematic target is `v·tan(δ)/L`, capped at `lateralLimit/max(|v|, 0.5)`. The yaw rate follows that
+    target with a first-order lag of 0.12 s (`yawResponseSeconds`). That lag is the effective yaw inertia. There is no
+    slip feedback into yaw, so the car cannot spin without steering.
+  - **Lateral grip and drift:** `dvLat/dt = clamp(−grip·vLat, ±aLimit) − v·yawRate`. Normal grip is 8 /s and 14 m/s²
+    of limit. The drift grip is 1.6 /s and 10 m/s². The reduction is `handbrakeLevel × clamp((|v| − 8)/4, 0, 1)`, so the
+    handbrake cannot start a drift below 8 m/s. Handbrake engagement ramps over 0.25 s and releases over 0.5 s. The
+    slip is clamped to `|vLat| ≤ |v|·tan(50°)`.
+  - **Drift state:** `isDrifting` is true when `|v| > 5`, `|slip| > 6°`, and the handbrake is reducing grip. Ordinary
+    full-lock cornering therefore does not light the DRIFT badge.
+  - **Integration:** fixed 1/60 s steps. Position uses the midpoint heading with averaged velocities. Each frame delta
+    passes through the accumulator once. Angles are wrapped to [−π, π).
+  - **Wheel spin:** `spin += avgForward·dt / wheelRadius`. It is driven by distance, not by frame count. Reverse gives
+    negative spin.
+  - **Body (cosmetic, `simulation/bodyState.ts`):** three damped springs (ω 9 rad/s, ζ 0.7) chase targets derived from
+    the accelerations. Pitch target = `−longAccel·0.0025` (positive is nose down). Roll target = `+latAccel·0.0025`
+    (positive lifts the right side). Heave target = `−longAccel·0.001` m. Limits are pitch ±2.0°, roll ±2.9°, and
+    heave ±0.02 m. The body is stepped in the same fixed loop, but it never writes to the vehicle state.
+  - **Render interpolation:** `interpolateVehicleState` and `getRenderBody` blend the last two steps. Angles take the
+    shortest arc.
+  - Drive direction readout: `drive` above 0.1 m/s forward, `reverse` below −0.1 m/s, `neutral` otherwise. The HUD
+    shows D, R, or N only. No RPM and no gear are simulated or displayed.
 
 ## 7. Input
 
@@ -200,12 +222,20 @@ Rules:
 
 ## 8. Camera
 
-- Chase-camera math (`camera/chaseCamera.ts`) is pure and runs in simulation space.
-- Distance behind the rear axle: 7.5 m at standstill, plus 0.05 m per m/s of speed, capped at +3 m.
-- Height 2.8 m. Look-at point 12 m ahead of the rear axle, 1.0 m high.
-- Position and look-at are damped with frame-rate-independent exponential smoothing. The first update, and any
-  update after reset, snaps to the goal. A zero step (paused) freezes the camera.
-- Camera name `ChaseCamera`. FOV 62°, near 0.1 m, far 3000 m. Fog 180 m to 1500 m.
+- Chase-camera math (`camera/chaseCamera.ts`) is pure and runs in simulation space. Tuning is in
+  `config/cameraConfig.ts`.
+- **Heading:** the camera has its own heading, which lags the vehicle yaw with a 5 /s damped follow along the
+  shortest arc. It never rolls and never reads steering input. The car stays in front of the camera (tests and the
+  browser check verify this).
+- **Distance behind the rear axle:** 7.5 m at standstill, plus 0.05 m per m/s of speed (capped at +3 m), plus an
+  acceleration lag of 0.04 m per m/s² (capped at ±0.8 m, smoothed at 3 /s). Braking brings the camera in.
+- **Height** 2.8 m. **Look-at** 12 m ahead along the camera heading, 1.0 m high.
+- **FOV:** 62° at standstill, widening linearly to 74° at top speed, eased at 4 /s.
+- **Shake:** vertical only. Zero below 60% of top speed, then up to ±0.035 m at top speed. Deterministic, driven by
+  camera time, which advances only with dt.
+- All smoothing is delta-time corrected. A zero step (paused) freezes everything. The first update, and any update
+  after reset, snaps to the goal.
+- Camera name `ChaseCamera`. Near 0.1 m, far 3000 m. Fog 180 m to 1500 m.
 
 ## 9. Scene and assets
 
@@ -250,29 +280,42 @@ Implemented and verified (see sections 14 and 15):
 - Project scaffold, pinned versions, strict TypeScript, ESLint, Vitest, Vite
 - Coordinate convention with the documented render-side mirror
 - Fixed-timestep simulation with interpolation and a single R3F frame driver
-- Kinematic bicycle model with throttle, brake, reverse, handbrake, rate-limited speed-tapered steering,
-  lateral-acceleration cap (placeholder tuning)
-- Unified keyboard input with held keys, actions, form-control suppression, and listener cleanup
-- Pause (Escape or button) that freezes simulation and camera; reset (R or button) that restores the spawn pose
-- Chase camera with speed-dependent distance and damping
-- Two-lane placeholder road with shoulders, markings, distance markers, arrows, posts, and trees
-- Procedural car with headlights, tail lights, indicators, and windows
-- HUD: speed, D/R/N, pause status, Pause and Reset buttons, control hints
-- Dev-only diagnostics panel, error capture, and the browser-test hook
+- Part 1: playable driving scene with keyboard controls, pause, reset, chase camera, road, and HUD
+- Part 2: vehicle driving quality (see section 6):
+  - progressive throttle and brake with pedal ramps, configurable top speed (62 m/s) and reverse limit (12 m/s)
+  - speed-dependent steering, with yaw inertia and a lateral-acceleration cap
+  - lateral grip with a handbrake drift (start above 8 m/s) and smooth recovery
+  - cosmetic body pitch, roll, and heave on a separate pivot
+  - wheel spin from distance traveled, and front-wheel steer visuals
+  - chase camera with heading lag, acceleration lag, speed FOV, speed shake, and safe reset
+  - HUD: arc gauge, km/h and mph (one conversion function), D/R/N, DRIFT badge
+  - central typed tuning, plus a debug snapshot with slip, body, and wheel telemetry (dev only)
 
 Not implemented (do not describe as done):
 - Collision and road constraints. The car can drive off the road onto the shoulder and into the grass.
-- Physics engine (Rapier)
+- Physics engine (Rapier). Not installed, and not needed for the custom model.
 - Traffic, police AI, AI opponents, a city, career, progression, missions, vehicle purchasing
+- Drift scoring, race events, and the road-network phase (explicitly out of scope for Part 2)
 - Menus beyond the HUD buttons; audio; persistent data (save, settings)
 - External assets, an asset loader, and real vehicle models
-- Blinking indicators, real light sources, and visible wheel rotation
+- Blinking indicators and real light sources
 - GSAP presentation work; mobile or touch input
 
 ## 13. Known issues
 
 - **Steering does nothing at standstill** (by design: speed-sensitive steering). A car that is not moving cannot be
   turned in place. This is a gameplay decision to confirm.
+- **Handbrake deceleration changed in Part 2** from 12 to 6 m/s², so drifts are viable. It still stops the car from
+  low speed and still blocks reverse creep at standstill.
+- **Speed readout overlaps the gauge.** The "km/h" unit and the mph line sit over the ends of the arc gauge at the
+  default size. Cosmetic. Not yet fixed.
+- **Wheel-steer and wheel-spin visuals are verified by unit tests only.** The rig math is tested in Three.js
+  (`render/vehicleRig.test.ts`). The browser check confirms the telemetry, but the wheel angles were not visually
+  inspected at chase distance.
+- **Tire model is a placeholder.** Grip is linear with a saturating force limit, and the tuning is not measured
+  data. The single-track model has no load transfer. Body roll and pitch are cosmetic only.
+- **Mass is not a parameter.** Accelerations are specified in m/s², so mass would cancel. Yaw inertia is the yaw
+  response lag (0.12 s) instead.
 - **Vehicle leaves the road.** There are no road constraints. Expected at this stage.
 - **Spawn marker.** A distance marker sits on z = 0, under the spawn position, so it appears beneath the car at launch.
 - **Simulated time falls behind wall time on slow renderers.** The software WebGL used in this sandbox runs at about
@@ -290,23 +333,29 @@ Not implemented (do not describe as done):
 
 ## 14. Tests that must pass
 
-Run `npm test`. Currently **121 tests across 11 files**:
+Run `npm test`. Currently **177 tests across 14 files**:
 
 - `core/coordinates.test.ts`: forward/right convention, toRenderSpace
 - `core/math.test.ts`: clamp, moveTowards, wrapAngle, shortest angle, damping
+- `core/units.test.ts`: m/s to km/h and mph, and the sign of reverse speed
 - `render/renderSpace.test.ts`: real Three.js math for the mirror. Screen-right matches simulation-right. The SimRoot
   mirror places the nose and right side correctly. Bounds flip correctly.
 - `render/vehicleLayout.test.ts`: nose at +Z, tail at −Z, right at +X, wheels on the ground at the axles, body above
-  the ground, left and right mirror symmetry
-- `simulation/vehicle.test.ts`: longitudinal limits, brake without overshoot, reverse only when braking at standstill,
-  coasting, handbrake deceleration and reverse block, drive-direction readout, **steering-sign tests (rolling W+A and
-  W+D)**, no rotation at standstill, rate-limited steering, lateral cap, determinism, no mutation
+  the ground, symmetry, front/rear axle tags, and the body pivot position
+- `render/vehicleRig.test.ts`: rig resolution, steering on front wheels only, spin direction (forward), steer
+  direction (right), pitch and roll signs, body and suspension kept off the root, and no accumulation over frames
+- `simulation/vehicle.test.ts`: pedal ramps, progressive acceleration, top speed equilibrium and hard cap, brake
+  without overshoot, reverse only when braking at standstill, reverse cap, brake over throttle, coasting, handbrake
+  deceleration and reverse block, grip gating below 8 m/s, **drift start, steering authority during drift, recovery
+  under 1.5° after release, slip limit**, no false DRIFT in ordinary cornering, wheel spin from distance, **steering-sign
+  tests (rolling W+A and W+D)**, speed-sensitive steering, lateral cap, determinism, no mutation, seam interpolation
+- `simulation/bodyState.test.ts`: dive under braking, lift under acceleration, right-side lift in a right turn, settling
+  to level, limits, determinism, zero dt
 - `engine/fixedStep.test.ts`, `engine/gameSimulation.test.ts`: step planning, frame-rate independence, interpolation,
-  reset to spawn
-- `input/keyBindings.test.ts`: held-key mapping, action mapping, prevent-default set
-- `input/inputController.test.ts`: held-key tracking, blur and visibility clear, action queue, form-control suppression,
-  Escape while a control has focus, listener removal and no stacking after re-attach
-- `camera/chaseCamera.test.ts`: goals, snapping, convergence, speed-dependent distance
+  reset, **one movement system (the loop matches a plain stepVehicle chain)**, body separate from the vehicle
+- `input/keyBindings.test.ts`, `input/inputController.test.ts`: held keys, actions, form-control suppression, cleanup
+- `camera/chaseCamera.test.ts`: goals, snapping, convergence, pause freeze, reset, heading lag (including the ±π seam),
+  the car staying in front of the camera through a sustained turn, acceleration lag, FOV, and shake bounds
 - `world/roadLayout.test.ts`: lanes, double yellow line, edge lines, shoulders, markers, arrows, road and segment bounds
 
 Any change to conventions must update the mirror tests and this document together.
@@ -329,17 +378,21 @@ Run from the project root (`/home/user/street-racer`):
 
 Node 20.19+ or 22.12+ is required (Vite 8).
 
-Verification done in Part 1:
-- `npm run check`: typecheck, lint, 121 tests, and production build all pass.
-- Production bundle: one JavaScript chunk, no `__STREET_RACER_DEBUG__` or `DEV DIAGNOSTICS` strings, and no debug
-  chunk. The only `debug-panel` match is the CSS rule noted in section 13.
-- `tools/browser-smoke.py` against the dev server: **40 of 40 checks passed** (spawn, camera, HUD, single listeners,
-  acceleration, steering sign, reset, speed readout, pause, braking and reverse, handbrake, blur and hidden-tab
-  clearing, form-control suppression, pause and reset buttons, debug toggle, zero runtime errors). Screenshots and a
-  JSON report are in `/home/user/verification/part1/`.
-- Steering-sign results (W held, rolling at about 12 m/s): A gave a heading change of −28.5° and dx −8.4 m. D gave
-  +38.1° and dx +4.3 m (run-to-run values vary with frame timing).
-- Phase 0 checks (`D` steers toward +X on screen-right) still hold.
+Verification in Part 2 (run in the live dev server, with the browser check):
+- `npm run check`: typecheck, lint, **177 tests in 14 files**, and production build all pass.
+- Production build: one JavaScript chunk of 1.16 MB (320 kB gzip), with the same chunk-size warning as Part 1. No
+  `__STREET_RACER_DEBUG__` or `DEV DIAGNOSTICS` strings in the bundle.
+- `tools/browser-smoke.py` against the dev server: **60 of 60 checks passed**. These are the 40 Part 1 checks, plus 20
+  Part 2 checks: HUD telemetry (no RPM or gear, gauge, km/h and mph), camera snap on reset, pedal ramp and top-speed
+  cap, wheel spin equal to distance/radius (0.000° difference), body dive and lift, FOV widening, car ahead of the
+  camera through a turn, camera heading lag, drift start (slip over 6°, DRIFT badge, snapshot flag), drift recovery
+  (under 1.5°), and mph consistency. Screenshots and the JSON report are in `/home/user/verification/part2/`.
+- Steering sign in Part 2: A gave a heading change of −36.3° and dx −8.4 m. D gave +46.3° and dx +5.8 m. Values
+  vary with frame timing.
+- Drift sample: slip −12.5° at 13.5 m/s, then −0.53° after release.
+
+Browser tooling note: Playwright and Chromium were installed in this sandbox for the Part 2 run. They are not part of
+the project's dependencies.
 
 ## 16. Rules for future development prompts
 

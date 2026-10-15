@@ -23,11 +23,77 @@ canvas {
   user-select: none;
 }
 
-.hud-gear {
+.hud-cluster {
+  position: relative;
+  width: 180px;
+  height: 150px;
+}
+
+.hud-gauge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 150px;
+  height: 150px;
+  overflow: visible;
+}
+
+.hud-gauge-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+
+.hud-gauge-value {
+  fill: none;
+  stroke: #ffd166;
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke 120ms ease;
+}
+
+.hud-gauge-value-drift {
+  stroke: #ff6b6b;
+}
+
+.hud-readout {
+  position: absolute;
+  left: 0;
+  top: 48px;
+  width: 150px;
+  text-align: center;
+}
+
+.hud-subline {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 10px;
   margin-top: 4px;
-  font-size: 22px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.hud-direction {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.45);
   font-weight: 800;
-  line-height: 1;
+  text-align: center;
+}
+
+.hud-drift {
+  margin-top: 6px;
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: rgba(235, 87, 87, 0.9);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
 }
 
 .hud-controls {
@@ -72,7 +138,7 @@ canvas {
 }
 
 .hud-speed {
-  font-size: 44px;
+  font-size: 36px;
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -85,7 +151,7 @@ canvas {
 }
 
 .hud-hint {
-  margin-top: 8px;
+  margin-top: 10px;
   font-size: 12px;
   opacity: 0.8;
 }

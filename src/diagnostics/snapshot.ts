@@ -1,8 +1,8 @@
 import type { ChaseCameraState } from '../camera/chaseCamera';
 import { forwardFromYaw, toRenderSpace } from '../core/coordinates';
-import { metersPerSecondToKph, RAD_TO_DEG } from '../core/units';
-import type { InputState, Vec3, VehicleState } from '../core/types';
-import { getDriveDirection, type DriveDirection } from '../simulation/vehicle';
+import { metersPerSecondToKph, metersPerSecondToMph, RAD_TO_DEG } from '../core/units';
+import type { BodyState, InputState, Vec3, VehicleState } from '../core/types';
+import { getDriveDirection, slipAngleRadians, type DriveDirection } from '../simulation/vehicle';
 
 /** A plain, serializable view of the simulation and renderer state for the debug panel. */
 
@@ -20,6 +20,7 @@ export interface DiagnosticsSnapshot {
     name: string;
     positionSim: Vec3;
     targetSim: Vec3;
+    headingLagDegrees: number;
     fovDegrees: number;
     nearMeters: number;
     farMeters: number;
@@ -31,8 +32,23 @@ export interface DiagnosticsSnapshot {
     forwardRender: Vec3;
     speedMps: number;
     speedKph: number;
+    speedMph: number;
+    lateralSpeedMps: number;
+    slipAngleDegrees: number;
+    drifting: boolean;
     steerAngleDegrees: number;
     yawRateDegPerSec: number;
+    longitudinalAccel: number;
+    lateralAccel: number;
+    throttlePedal: number;
+    brakePedal: number;
+    handbrakeLevel: number;
+    wheelSpinDegrees: number;
+  };
+  body: {
+    pitchDegrees: number;
+    rollDegrees: number;
+    heaveMeters: number;
   };
   input: InputState & { pressedKeys: string[] };
   control: {
@@ -66,12 +82,19 @@ export interface SnapshotInput {
   cameraFar: number;
   chase: ChaseCameraState;
   vehicle: VehicleState;
+  body: BodyState;
+  drifting: boolean;
   input: InputState;
   pressedKeys: string[];
   paused: boolean;
   physics: DiagnosticsSnapshot['physics'];
   vehicleInFrustum: boolean;
   roadInFrustum: boolean;
+}
+
+/** Signed difference a - b in degrees, on the shortest arc, in (-180, 180]. */
+function shortestSignedDegrees(a: number, b: number): number {
+  return Math.atan2(Math.sin(a - b), Math.cos(a - b)) * RAD_TO_DEG;
 }
 
 export const PHYSICS_MODE_LABEL = 'custom kinematic bicycle (Rapier not installed)';
@@ -87,6 +110,7 @@ export function buildDiagnosticsSnapshot(input: SnapshotInput): DiagnosticsSnaps
       name: input.cameraName,
       positionSim: input.chase.position,
       targetSim: input.chase.target,
+      headingLagDegrees: shortestSignedDegrees(input.vehicle.yaw, input.chase.headingYaw),
       fovDegrees: input.cameraFovDegrees,
       nearMeters: input.cameraNear,
       farMeters: input.cameraFar,
@@ -98,8 +122,23 @@ export function buildDiagnosticsSnapshot(input: SnapshotInput): DiagnosticsSnaps
       forwardRender: toRenderSpace(forward),
       speedMps: vehicle.speed,
       speedKph: metersPerSecondToKph(vehicle.speed),
+      speedMph: metersPerSecondToMph(vehicle.speed),
+      lateralSpeedMps: vehicle.lateralSpeed,
+      slipAngleDegrees: slipAngleRadians(vehicle) * RAD_TO_DEG,
+      drifting: input.drifting,
       steerAngleDegrees: vehicle.steerAngle * RAD_TO_DEG,
       yawRateDegPerSec: vehicle.yawRate * RAD_TO_DEG,
+      longitudinalAccel: vehicle.longitudinalAccel,
+      lateralAccel: vehicle.lateralAccel,
+      throttlePedal: vehicle.throttlePedal,
+      brakePedal: vehicle.brakePedal,
+      handbrakeLevel: vehicle.handbrakeLevel,
+      wheelSpinDegrees: vehicle.wheelSpin * RAD_TO_DEG,
+    },
+    body: {
+      pitchDegrees: input.body.pitch * RAD_TO_DEG,
+      rollDegrees: input.body.roll * RAD_TO_DEG,
+      heaveMeters: input.body.heave,
     },
     input: { ...input.input, pressedKeys: input.pressedKeys },
     control: {

@@ -1,13 +1,13 @@
 """
-Browser verification for Part 1 (first playable driving scene).
+Browser verification for Part 1 (driving scene) and Part 2 (driving quality).
 
 Runs against the DEV server (the __STREET_RACER_DEBUG__ hook is DEV-only).
 Reads authoritative simulation state through the hook, drives the car with real keyboard events,
-and writes screenshots and a JSON report.
+and writes screenshots and a JSON report. The Part 1 checks are kept, so this run is also the regression.
 
 Usage:
   python3 tools/browser-smoke.py [url] [outdir]
-Defaults: url=http://localhost:5173/  outdir=/home/user/verification/part1
+Defaults: url=http://localhost:5173/  outdir=/home/user/verification/part2
 """
 
 import json
@@ -17,12 +17,14 @@ import sys
 from playwright.sync_api import sync_playwright
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5173/"
-OUT = sys.argv[2] if len(sys.argv) > 2 else "/home/user/verification/part1"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "/home/user/verification/part2"
 os.makedirs(OUT, exist_ok=True)
 
 # Spawn pose from src/config/simulationConfig.ts: right lane x = laneWidth/2 = 1.8 m, z = 0, yaw = 0.
 SPAWN_X = 1.8
 TOL = 1e-3
+WHEEL_RADIUS_M = 0.33  # src/config/vehicleConfig.ts wheelRadiusMeters
+TOP_SPEED_MPS = 62.0   # src/config/vehicleConfig.ts maxForwardSpeedMps
 
 results = []
 console_errors = []
@@ -351,6 +353,132 @@ with sync_playwright() as p:
           f"before={before_panel} after={after_panel}")
     page.keyboard.press("Backquote")
     settle(page, 200)
+
+
+    # ================= Part 2: driving quality =================
+    # ---------- HUD telemetry (no fabricated RPM or gear) ----------
+    hud_all = page.locator(".hud").inner_text().lower()
+    check("HUD has no RPM or gear readout", "rpm" not in hud_all and "gear" not in hud_all)
+    check("HUD arc gauge is rendered", page.locator("svg.hud-gauge").count() == 1)
+    check("HUD shows speed in km/h and mph", "km/h" in hud_all and "mph" in hud_all)
+    check("no DRIFT badge while driving normally at rest", page.locator(".hud-drift").count() == 0)
+
+    # ---------- Reset: camera snaps behind the spawn pose (no sweep from a stale pose) ----------
+    reset_via_key(page)
+    s_rst = snap(page)
+    cam_r = s_rst["camera"]["positionSim"]
+    check("reset: camera snaps behind the spawn pose", abs(cam_r["x"] - SPAWN_X) < 0.05 and abs(cam_r["z"] + 7.5) < 0.05,
+          f"cam x={cam_r['x']:.3f} z={cam_r['z']:.3f}")
+    check("camera FOV is the base 62 degrees at standstill", abs(s_rst["camera"]["fovDegrees"] - 62.0) < 0.05,
+          f"fov={s_rst['camera']['fovDegrees']:.2f}")
+
+    # ---------- Pedals: ramp up while held, back to zero on release, and never above top speed ----------
+    page.keyboard.down("KeyW")
+    wait_snap(page, "s.vehicle.throttlePedal >= 0.99")
+    max_speed_seen = 0.0
+    for _ in range(12):
+        max_speed_seen = max(max_speed_seen, snap(page)["vehicle"]["speedMps"])
+        page.wait_for_timeout(120)
+    page.keyboard.up("KeyW")
+    wait_snap(page, "s.vehicle.throttlePedal === 0", timeout_ms=20000)
+    check("throttle pedal ramps to full while held and releases to zero", True, f"max speed in sample={max_speed_seen:.2f} m/s")
+    check("speed never exceeds the top-speed hard cap while throttle is held", max_speed_seen <= TOP_SPEED_MPS + 1e-6,
+          f"max={max_speed_seen:.3f} m/s")
+    settle(page)
+
+    # ---------- Wheel spin follows distance traveled (straight run, so distance = z) ----------
+    reset_via_key(page)
+    page.keyboard.down("KeyW")
+    wait_snap(page, "s.vehicle.speedMps >= 15")
+    s_spin = snap(page)
+    page.keyboard.up("KeyW")
+    expected_spin_deg = (pos(s_spin)["z"] / WHEEL_RADIUS_M) * 180.0 / 3.141592653589793
+    diff = ((s_spin["vehicle"]["wheelSpinDegrees"] - expected_spin_deg + 180.0) % 360.0) - 180.0
+    check("wheel spin equals distance travelled divided by radius (within 0.5 deg)", abs(diff) < 0.5,
+          f"spin={s_spin['vehicle']['wheelSpinDegrees']:.2f} expected={expected_spin_deg:.2f} diff={diff:.3f}")
+    settle(page)
+
+    # ---------- Body pitch: nose dips under braking and lifts under acceleration (cosmetic) ----------
+    page.keyboard.down("KeyS")
+    wait_snap(page, "s.body.pitchDegrees > 0.2", timeout_ms=30000)
+    s_dive = snap(page)
+    page.keyboard.up("KeyS")
+    check("body dives (positive pitch) under braking", s_dive["body"]["pitchDegrees"] > 0.2,
+          f"pitch={s_dive['body']['pitchDegrees']:.2f} deg")
+    settle(page)
+    reset_via_key(page)
+    page.keyboard.down("KeyW")
+    wait_snap(page, "s.body.pitchDegrees < -0.2", timeout_ms=30000)
+    s_lift = snap(page)
+    page.keyboard.up("KeyW")
+    check("body lifts (negative pitch) under acceleration", s_lift["body"]["pitchDegrees"] < -0.2,
+          f"pitch={s_lift['body']['pitchDegrees']:.2f} deg")
+    settle(page)
+
+    # ---------- Camera: FOV widens with speed; the car stays in front of the camera through a turn ----------
+    reset_via_key(page)
+    page.keyboard.down("KeyW")
+    wait_snap(page, "s.vehicle.speedMps > 14 && s.camera.fovDegrees > 62.8", timeout_ms=40000)
+    s_fast = snap(page)
+    check("FOV widens with speed (above 62 deg at speed)", s_fast["camera"]["fovDegrees"] > 62.8,
+          f"fov={s_fast['camera']['fovDegrees']:.2f} at {s_fast['vehicle']['speedMps']:.1f} m/s")
+    page.keyboard.down("KeyD")
+    behind_samples = []
+    lag_max = 0.0
+    for _ in range(8):
+        page.wait_for_timeout(150)
+        s_t = snap(page)
+        cam = s_t["camera"]
+        car = pos(s_t)
+        fx = cam["targetSim"]["x"] - cam["positionSim"]["x"]
+        fz = cam["targetSim"]["z"] - cam["positionSim"]["z"]
+        norm = (fx * fx + fz * fz) ** 0.5 or 1.0
+        ahead = ((car["x"] - cam["positionSim"]["x"]) * fx + (car["z"] - cam["positionSim"]["z"]) * fz) / norm
+        behind_samples.append(ahead)
+        lag_max = max(lag_max, abs(cam["headingLagDegrees"]))
+    page.keyboard.up("KeyD")
+    settle(page)
+    check("camera stays behind the car through a steering input (car ahead of camera in every sample)",
+          min(behind_samples) > 1.0, f"min ahead={min(behind_samples):.2f} m")
+    check("camera heading lags the car during a turn (subtle follow, not a snap)", lag_max > 0.2,
+          f"max |lag|={lag_max:.2f} deg")
+    page.screenshot(path=f"{OUT}/08_camera_turn.png")
+
+    # ---------- Drift: handbrake plus steer at speed starts a slide; release recovers ----------
+    reset_via_key(page)
+    page.keyboard.down("KeyW")
+    wait_snap(page, "s.vehicle.speedMps >= 16", timeout_ms=40000)
+    page.keyboard.down("Space")
+    page.keyboard.down("KeyD")
+    # Slip is signed: a right turn slides the car toward -X (negative), so compare magnitudes.
+    wait_snap(page, "Math.abs(s.vehicle.slipAngleDegrees) > 6", timeout_ms=40000)
+    s_drift = snap(page)
+    # The HUD publishes at about 10 Hz, so wait for the badge instead of reading it immediately.
+    page.wait_for_selector(".hud-drift", timeout=10000)
+    drift_badge = page.locator(".hud-drift").count() == 1
+    check("drift starts: slip exceeds 6 degrees under handbrake plus steer", abs(s_drift["vehicle"]["slipAngleDegrees"]) > 6,
+          f"slip={s_drift['vehicle']['slipAngleDegrees']:.1f} deg at {s_drift['vehicle']['speedMps']:.1f} m/s")
+    check("drift state is reported in the snapshot", s_drift["vehicle"]["drifting"] is True)
+    check("DRIFT badge is visible on the HUD while drifting", drift_badge)
+    page.screenshot(path=f"{OUT}/09_drift.png")
+    page.keyboard.up("Space")
+    page.keyboard.up("KeyD")
+    page.keyboard.up("KeyW")
+    wait_snap(page, "Math.abs(s.vehicle.slipAngleDegrees) < 1.5", timeout_ms=40000)
+    s_rec = snap(page)
+    check("drift recovers: slip returns under 1.5 degrees after release", abs(s_rec["vehicle"]["slipAngleDegrees"]) < 1.5,
+          f"slip={s_rec['vehicle']['slipAngleDegrees']:.2f} deg")
+    page.wait_for_selector(".hud-drift", state="detached", timeout=10000)
+    check("drift badge clears after recovery", s_rec["vehicle"]["drifting"] is False and page.locator(".hud-drift").count() == 0)
+    settle(page)
+
+    # ---------- Speed units: mph and km/h come from the same conversion ----------
+    hud_now = page.evaluate("() => window.__STREET_RACER_DEBUG__.getHud()")
+    check("mph readout matches km/h through the shared conversion (within 0.6 mph)",
+          abs(hud_now["speedMph"] - hud_now["speedKph"] * 0.621371) < 0.6,
+          f"kph={hud_now['speedKph']:.1f} mph={hud_now['speedMph']:.1f}")
+
+    reset_via_key(page)
 
     # ---------- Errors ----------
     errs = page.evaluate("() => window.__STREET_RACER_DEBUG__.getErrors()")

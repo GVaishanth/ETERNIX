@@ -10,7 +10,7 @@ import type { DiagnosticsSnapshot } from './snapshot';
 export interface StreetRacerDebugApi {
   getSnapshot(): DiagnosticsSnapshot | null;
   getErrors(): DiagnosticError[];
-  getHud(): { speedKph: number; direction: string };
+  getHud(): { speedKph: number; speedMph: number; direction: string; drifting: boolean };
   isPaused(): boolean;
 }
 
@@ -26,7 +26,7 @@ export function installDevHooks(target: Window): () => void {
     getErrors: () => useDiagnosticsStore.getState().errors,
     getHud: () => {
       const hud = useAppStore.getState().hud;
-      return { speedKph: hud.speedKph, direction: hud.direction };
+      return { speedKph: hud.speedKph, speedMph: hud.speedMph, direction: hud.direction, drifting: hud.drifting };
     },
     isPaused: () => useAppStore.getState().paused,
   };

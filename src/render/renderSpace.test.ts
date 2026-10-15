@@ -19,11 +19,18 @@ const poseAt = (yaw: number): VehicleState => ({
   speed: 20,
   steerAngle: 0,
   yawRate: 0,
+  lateralSpeed: 0,
+  throttlePedal: 0,
+  brakePedal: 0,
+  handbrakeLevel: 0,
+  longitudinalAccel: 0,
+  lateralAccel: 0,
+  wheelSpin: 0,
 });
 
 function buildChaseCamera(pose: VehicleState): PerspectiveCamera {
-  const goals = computeChaseGoals(pose, CHASE_CAMERA_CONFIG);
-  const camera = new PerspectiveCamera(CHASE_CAMERA_CONFIG.fovDegrees, 1, 0.1, 3000);
+  const goals = computeChaseGoals(pose, pose.yaw, 0, 0, CHASE_CAMERA_CONFIG);
+  const camera = new PerspectiveCamera(CHASE_CAMERA_CONFIG.fovBaseDegrees, 1, 0.1, 3000);
   setRenderVector(camera.position, goals.position);
   camera.lookAt(setRenderVector(new Vector3(), goals.target));
   camera.updateMatrixWorld();
