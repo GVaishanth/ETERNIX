@@ -5,30 +5,36 @@ import {
   DIAGNOSTICS_PUBLISH_INTERVAL_SECONDS,
   FIXED_STEP_SECONDS,
   HUD_PUBLISH_INTERVAL_SECONDS,
+  MAX_FRAME_SECONDS,
+  ROAD_CHECK_AHEAD_METERS,
+  ROAD_CHECK_BEHIND_METERS,
   VISIBILITY_CHECK_INTERVAL_SECONDS,
 } from '../config/simulationConfig';
 import type { InputState, VehicleState } from '../core/types';
 import { metersPerSecondToKph } from '../core/units';
 import { GameSimulation } from '../engine/gameSimulation';
+import type { GameAction } from '../input/keyBindings';
 import type { InputController } from '../input/inputController';
 import { useAppStore } from '../state/appStore';
 import { useDiagnosticsStore } from '../diagnostics/diagnosticsStore';
 import { buildDiagnosticsSnapshot, PHYSICS_MODE_LABEL, type RendererStatus } from '../diagnostics/snapshot';
 import { isBoundsInFrustum, updateFrustumFromCamera } from '../diagnostics/visibility';
-import { getRoadBoundsSim } from '../world/roadLayout';
+import { getDriveDirection } from '../simulation/vehicle';
+import { getRoadSegmentBoundsSim } from '../world/roadLayout';
 import { renderBoundsFromSim, setRenderVector } from './renderSpace';
 
 /*
  * The per-frame orchestration for the single authoritative game loop. Each tick:
- *   1. samples input once
- *   2. advances the fixed-step simulation (the only place simulation state changes)
+ *   1. consumes queued actions (pause, reset, debug panel)
+ *   2. samples held input once, and advances the fixed-step simulation (the only place simulation state changes)
  *   3. writes the interpolated pose to the vehicle object and camera (render-only)
- *   4. publishes HUD speed at about 10 Hz, and dev diagnostics at a few Hz
+ *   4. publishes HUD values at about 10 Hz, and dev diagnostics at a few Hz
  * React is not involved per frame. This class is owned by GameLoopDriver and driven by R3F's useFrame.
  */
 
 const DIAGNOSTICS_ENABLED = import.meta.env.DEV;
 const CHASE_CAMERA_NAME = 'ChaseCamera';
+const NEUTRAL_INPUT: InputState = { steer: 0, throttle: 0, brake: 0, handbrake: 0 };
 
 export interface RenderTickContext {
   deltaSeconds: number;
@@ -47,6 +53,12 @@ interface IntervalTimers {
 function advanceInterval(elapsed: number, deltaSeconds: number, intervalSeconds: number): { fired: boolean; elapsed: number } {
   const next = elapsed + deltaSeconds;
   return next >= intervalSeconds ? { fired: true, elapsed: 0 } : { fired: false, elapsed: next };
+}
+
+/** Frame time used for timers and camera damping. The simulation clamps its own input separately. */
+function clampFrameSeconds(deltaSeconds: number): number {
+  if (!Number.isFinite(deltaSeconds) || deltaSeconds < 0) return 0;
+  return Math.min(deltaSeconds, MAX_FRAME_SECONDS);
 }
 
 function applyPoseToVehicle(group: Group | null, pose: VehicleState): void {
@@ -73,7 +85,7 @@ export class RenderLoop {
   private readonly timers: IntervalTimers = { hud: 0, diagnostics: 0, visibility: 0 };
   private readonly frustum = new Frustum();
   private readonly vehicleBounds = new Box3();
-  private readonly roadBounds: Box3 = renderBoundsFromSim(getRoadBoundsSim());
+  private readonly roadBounds = new Box3();
   private readonly cameraTarget = new Vector3();
   private vehicleInFrustum = false;
   private roadInFrustum = false;
@@ -86,15 +98,24 @@ export class RenderLoop {
   }
 
   tick(context: RenderTickContext): void {
-    const { deltaSeconds, camera, vehicle } = context;
+    const { camera, vehicle } = context;
+    const frameSeconds = clampFrameSeconds(context.deltaSeconds);
     camera.name = CHASE_CAMERA_NAME;
 
-    const inputState: InputState = this.input.sample();
-    this.simulation.update(deltaSeconds, inputState);
+    for (const action of this.input.consumeActions()) {
+      this.handleAction(action);
+    }
+
+    const paused = useAppStore.getState().paused;
+    const inputState: InputState = paused ? NEUTRAL_INPUT : this.input.sample();
+    if (!paused) {
+      this.simulation.update(frameSeconds, inputState);
+    }
     const pose = this.simulation.getRenderState();
 
     applyPoseToVehicle(vehicle, pose);
-    updateChaseCamera(this.chase, pose, CHASE_CAMERA_CONFIG, deltaSeconds);
+    // A zero step while paused freezes the camera. Reset snaps it because `initialized` was cleared.
+    updateChaseCamera(this.chase, pose, CHASE_CAMERA_CONFIG, paused ? 0 : frameSeconds);
     setRenderVector(camera.position, this.chase.position);
     camera.lookAt(setRenderVector(this.cameraTarget, this.chase.target));
 
@@ -102,39 +123,67 @@ export class RenderLoop {
       this.started = true;
       useAppStore.getState().setStatus('running');
     }
-    this.publishHud(deltaSeconds, pose);
+    this.publishHud(frameSeconds);
 
     if (DIAGNOSTICS_ENABLED) {
-      this.publishDiagnostics(context, pose, inputState);
+      this.publishDiagnostics(context, frameSeconds, inputState, paused);
     }
     this.frameCount += 1;
   }
 
-  private publishHud(deltaSeconds: number, pose: VehicleState): void {
-    const timer = advanceInterval(this.timers.hud, deltaSeconds, HUD_PUBLISH_INTERVAL_SECONDS);
-    this.timers.hud = timer.elapsed;
-    if (timer.fired) {
-      useAppStore.getState().setHudSpeedKph(metersPerSecondToKph(pose.speed));
+  private handleAction(action: GameAction): void {
+    switch (action) {
+      case 'pause':
+        useAppStore.getState().togglePause();
+        break;
+      case 'reset':
+        this.simulation.reset();
+        this.chase.initialized = false;
+        // Show the reset speed on the next frame, not after the normal HUD interval.
+        this.timers.hud = HUD_PUBLISH_INTERVAL_SECONDS;
+        break;
+      case 'debugPanel':
+        if (DIAGNOSTICS_ENABLED) useDiagnosticsStore.getState().togglePanel();
+        break;
+      default: {
+        const unhandled: never = action;
+        throw new Error(`Unhandled action: ${String(unhandled)}`);
+      }
     }
   }
 
-  /** Development only. Visibility is checked at a low rate, and the snapshot is published at a low rate. */
-  private publishDiagnostics(context: RenderTickContext, pose: VehicleState, inputState: InputState): void {
-    const { deltaSeconds, camera, renderer, vehicle } = context;
+  private publishHud(frameSeconds: number): void {
+    const timer = advanceInterval(this.timers.hud, frameSeconds, HUD_PUBLISH_INTERVAL_SECONDS);
+    this.timers.hud = timer.elapsed;
+    if (!timer.fired) return;
+    const state = this.simulation.state;
+    useAppStore.getState().setHud({
+      speedKph: Math.abs(metersPerSecondToKph(state.speed)),
+      direction: getDriveDirection(state.speed),
+    });
+  }
 
-    const visibilityTimer = advanceInterval(this.timers.visibility, deltaSeconds, VISIBILITY_CHECK_INTERVAL_SECONDS);
+  /** Development only. Visibility is checked at a low rate, and the snapshot is published at a low rate. */
+  private publishDiagnostics(context: RenderTickContext, frameSeconds: number, inputState: InputState, paused: boolean): void {
+    const { camera, renderer, vehicle } = context;
+
+    const visibilityTimer = advanceInterval(this.timers.visibility, frameSeconds, VISIBILITY_CHECK_INTERVAL_SECONDS);
     this.timers.visibility = visibilityTimer.elapsed;
     if (visibilityTimer.fired && vehicle) {
       updateFrustumFromCamera(this.frustum, camera);
       this.vehicleBounds.setFromObject(vehicle);
       this.vehicleInFrustum = isBoundsInFrustum(this.frustum, this.vehicleBounds);
+      // Visibility is checked on the road stretch around the car, not the whole 4 km road.
+      const segment = getRoadSegmentBoundsSim(this.simulation.state.position.z, ROAD_CHECK_BEHIND_METERS, ROAD_CHECK_AHEAD_METERS);
+      this.roadBounds.copy(renderBoundsFromSim(segment));
       this.roadInFrustum = isBoundsInFrustum(this.frustum, this.roadBounds);
     }
 
-    const publishTimer = advanceInterval(this.timers.diagnostics, deltaSeconds, DIAGNOSTICS_PUBLISH_INTERVAL_SECONDS);
+    const publishTimer = advanceInterval(this.timers.diagnostics, frameSeconds, DIAGNOSTICS_PUBLISH_INTERVAL_SECONDS);
     this.timers.diagnostics = publishTimer.elapsed;
     if (!publishTimer.fired) return;
 
+    const authoritative = this.simulation.state;
     useDiagnosticsStore.getState().setSnapshot(
       buildDiagnosticsSnapshot({
         nowMs: Date.now(),
@@ -144,9 +193,10 @@ export class RenderLoop {
         cameraNear: camera.near,
         cameraFar: camera.far,
         chase: this.chase,
-        vehicle: pose,
+        vehicle: authoritative,
         input: inputState,
         pressedKeys: this.input.pressedKeys,
+        paused,
         physics: {
           mode: PHYSICS_MODE_LABEL,
           fixedStepSeconds: FIXED_STEP_SECONDS,

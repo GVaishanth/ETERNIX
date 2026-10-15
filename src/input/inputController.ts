@@ -1,46 +1,98 @@
 import type { InputState } from '../core/types';
-import { isGameKeyCode, keysToInput } from './keyBindings';
+import {
+  actionForKeyCode,
+  isHeldGameKeyCode,
+  keysToInput,
+  shouldPreventDefault,
+  type GameAction,
+} from './keyBindings';
 
-/**
- * Tracks held game keys from DOM events. It does not hold React state and is never read
- * by React rendering. The game loop calls sample() once per frame.
+/*
+ * The single keyboard input system. It owns the only keyboard listeners in the app.
+ *   - Held keys (driving) are tracked from keydown and keyup, and cleared on blur and tab hiding,
+ *     so a missed keyup cannot leave a key stuck down.
+ *   - Actions (pause, reset, debug panel) are queued once per press and consumed by the game loop.
+ *   - Keystrokes aimed at form controls (buttons, inputs) are ignored, except Escape, so UI
+ *     interaction cannot accidentally drive the car.
+ * The controller holds no React state. The loop calls sample() and consumeActions() once per frame.
  */
+
+const FORM_CONTROL_TAGS: ReadonlySet<string> = new Set(['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON']);
+const MAX_QUEUED_ACTIONS = 16;
+
+/** True when a keystroke targets a control the user is typing into or activating. */
+export function isFormControlTarget(target: EventTarget | null): boolean {
+  if (!target) return false;
+  const element = target as { tagName?: unknown; isContentEditable?: unknown };
+  if (typeof element.tagName === 'string' && FORM_CONTROL_TAGS.has(element.tagName.toUpperCase())) {
+    return true;
+  }
+  return element.isContentEditable === true;
+}
+
 export class InputController {
-  private readonly pressedCodes = new Set<string>();
+  private readonly heldCodes = new Set<string>();
+  private queuedActions: GameAction[] = [];
 
-  /** Attaches listeners to `target`. Returns a detach function that removes them. */
-  attach(target: Window): () => void {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (!isGameKeyCode(event.code)) return;
-      // Prevent arrow keys from scrolling the page while driving.
-      event.preventDefault();
-      this.pressedCodes.add(event.code);
+  /**
+   * Attaches listeners to the window (and, if provided, the document for visibility changes).
+   * Returns a function that removes every listener and clears all state.
+   */
+  attach(view: EventTarget, doc?: EventTarget): () => void {
+    const onKeyDown = (event: Event): void => this.handleKeyDown(event as KeyboardEvent);
+    const onKeyUp = (event: Event): void => {
+      this.heldCodes.delete((event as KeyboardEvent).code);
     };
-    const onKeyUp = (event: KeyboardEvent): void => {
-      this.pressedCodes.delete(event.code);
-    };
-    // Losing focus leaves keys stuck down unless the set is cleared.
-    const onBlur = (): void => {
-      this.pressedCodes.clear();
+    const onBlur = (): void => this.heldCodes.clear();
+    const onVisibilityChange = (): void => {
+      if ((doc as Document | undefined)?.hidden) this.heldCodes.clear();
     };
 
-    target.addEventListener('keydown', onKeyDown);
-    target.addEventListener('keyup', onKeyUp);
-    target.addEventListener('blur', onBlur);
+    view.addEventListener('keydown', onKeyDown);
+    view.addEventListener('keyup', onKeyUp);
+    view.addEventListener('blur', onBlur);
+    doc?.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
-      target.removeEventListener('keydown', onKeyDown);
-      target.removeEventListener('keyup', onKeyUp);
-      target.removeEventListener('blur', onBlur);
-      this.pressedCodes.clear();
+      view.removeEventListener('keydown', onKeyDown);
+      view.removeEventListener('keyup', onKeyUp);
+      view.removeEventListener('blur', onBlur);
+      doc?.removeEventListener('visibilitychange', onVisibilityChange);
+      this.heldCodes.clear();
+      this.queuedActions = [];
     };
   }
 
+  /** Queues an action from a UI control. It goes through the same path as a key press. */
+  queueAction(action: GameAction): void {
+    if (this.queuedActions.length < MAX_QUEUED_ACTIONS) this.queuedActions.push(action);
+  }
+
+  /** Returns the queued actions in order and clears the queue. Call once per frame. */
+  consumeActions(): GameAction[] {
+    const actions = this.queuedActions;
+    this.queuedActions = [];
+    return actions;
+  }
+
+  /** Current driver intent from the held keys. Call once per frame. */
   sample(): InputState {
-    return keysToInput(this.pressedCodes);
+    return keysToInput(this.heldCodes);
   }
 
   get pressedKeys(): string[] {
-    return [...this.pressedCodes].sort();
+    return [...this.heldCodes].sort();
+  }
+
+  private handleKeyDown(event: KeyboardEvent): void {
+    const code = event.code;
+    const isEscape = actionForKeyCode(code) === 'pause';
+    if (!isEscape && isFormControlTarget(event.target)) return;
+
+    if (shouldPreventDefault(code)) event.preventDefault();
+    if (isHeldGameKeyCode(code)) this.heldCodes.add(code);
+
+    const action = actionForKeyCode(code);
+    if (action && !event.repeat) this.queueAction(action);
   }
 }

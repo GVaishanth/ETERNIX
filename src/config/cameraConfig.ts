@@ -3,8 +3,12 @@ export interface ChaseCameraConfig {
   readonly fovDegrees: number;
   readonly nearMeters: number;
   readonly farMeters: number;
-  /** Camera distance behind the rear axle, measured along the vehicle forward axis. */
+  /** Camera distance behind the rear axle, measured along the vehicle forward axis, at standstill. */
   readonly distanceBehindMeters: number;
+  /** Extra pull-back per m/s of speed, so the camera widens its view as the car speeds up. */
+  readonly distancePerSpeedMeters: number;
+  /** Upper limit on the speed-based pull-back. */
+  readonly maxSpeedDistanceMeters: number;
   /** Camera height above the ground. */
   readonly heightMeters: number;
   /** Look-at point distance ahead of the rear axle. */
@@ -22,6 +26,8 @@ export const CHASE_CAMERA_CONFIG: ChaseCameraConfig = {
   nearMeters: 0.1,
   farMeters: 3000,
   distanceBehindMeters: 7.5,
+  distancePerSpeedMeters: 0.05,
+  maxSpeedDistanceMeters: 3,
   heightMeters: 2.8,
   lookAheadMeters: 12,
   lookHeightMeters: 1.0,

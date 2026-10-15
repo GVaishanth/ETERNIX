@@ -4,9 +4,10 @@ import { VEHICLE_CONFIG } from '../config/vehicleConfig';
 import type { GameSimulation } from '../engine/gameSimulation';
 import type { InputController } from '../input/inputController';
 import { GameLoopDriver } from './GameLoopDriver';
+import { Scenery } from './Scenery';
 import { Ground, Road } from './WorldGeometry';
 import { SimRoot } from './SimRoot';
-import { VehicleModel } from './VehicleModel';
+import { VehicleVisual } from './VehicleVisual';
 
 /**
  * The complete 3D scene: lights, the mirrored simulation root, and the loop driver.
@@ -27,7 +28,8 @@ export function RenderLayer({ simulation, input }: RenderLayerProps) {
       <SimRoot>
         <Ground />
         <Road />
-        <VehicleModel ref={vehicleRef} config={VEHICLE_CONFIG} />
+        <Scenery />
+        <VehicleVisual ref={vehicleRef} config={VEHICLE_CONFIG} />
       </SimRoot>
       <GameLoopDriver simulation={simulation} input={input} vehicleRef={vehicleRef} />
     </>

@@ -47,6 +47,15 @@ export class GameSimulation {
     this.droppedTotalSeconds += plan.droppedSeconds;
   }
 
+  /** Returns the vehicle to the spawn pose with zero speed, steer, and yaw rate. Clears interpolation history. */
+  reset(): void {
+    const spawn = createVehicleState(VEHICLE_SPAWN, VEHICLE_SPAWN_YAW_RADIANS);
+    this.previous = spawn;
+    this.current = spawn;
+    this.accumulatorSeconds = 0;
+    this.alpha = 0;
+  }
+
   /** Latest simulated state. Use for logic and diagnostics. */
   get state(): VehicleState {
     return this.current;

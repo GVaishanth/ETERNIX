@@ -1,7 +1,7 @@
 /**
  * Central vehicle tuning. Every value is SI and documented here; do not duplicate
- * these numbers in components. All values are PLACEHOLDERS for Phase 0 and must be
- * re-tuned in the vehicle-handling phase.
+ * these numbers in components. All values are PLACEHOLDERS and must be re-tuned
+ * during the handling phase.
  */
 export interface VehicleConfig {
   /** Distance between front and rear axles. Meters. */
@@ -14,7 +14,7 @@ export interface VehicleConfig {
   readonly bodyWidthMeters: number;
   /** Height of the lower body above the wheel bottoms. Meters. */
   readonly bodyHeightMeters: number;
-  /** Wheel radius. Meters. */
+  /** Wheel radius. Meters. The wheel bottoms touch the road surface at y = 0. */
   readonly wheelRadiusMeters: number;
 
   /** Maximum front-wheel angle at standstill. Radians. */
@@ -36,6 +36,8 @@ export interface VehicleConfig {
   readonly reverseAccelerationMps2: number;
   /** Deceleration at full brake input while moving forward. m/s^2. */
   readonly brakeDecelerationMps2: number;
+  /** Deceleration while the handbrake is held. Overrides throttle and reverse. m/s^2. */
+  readonly handbrakeDecelerationMps2: number;
   /** Passive deceleration when no drive input is held. m/s^2. */
   readonly coastDecelerationMps2: number;
 }
@@ -58,5 +60,6 @@ export const VEHICLE_CONFIG: VehicleConfig = {
   engineAccelerationMps2: 9,
   reverseAccelerationMps2: 4,
   brakeDecelerationMps2: 18,
+  handbrakeDecelerationMps2: 12,
   coastDecelerationMps2: 1.2,
 };

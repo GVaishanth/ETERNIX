@@ -1,20 +1,31 @@
 import { create } from 'zustand';
 import type { AppStatus } from '../core/types';
+import type { DriveDirection } from '../simulation/vehicle';
 
 /**
  * Low-frequency shared application state. Per-frame simulation values never go here.
- * The loop publishes the HUD speed at about 10 Hz, which is cheap enough for React.
+ * The loop publishes HUD values at about 10 Hz, which is cheap enough for React.
+ * `paused` is the single source of pause status. The loop reads it, and the HUD displays it.
  */
+export interface HudState {
+  speedKph: number;
+  direction: DriveDirection;
+}
+
 interface AppState {
   status: AppStatus;
-  hudSpeedKph: number;
+  paused: boolean;
+  hud: HudState;
   setStatus: (status: AppStatus) => void;
-  setHudSpeedKph: (speedKph: number) => void;
+  togglePause: () => void;
+  setHud: (hud: HudState) => void;
 }
 
 export const useAppStore = create<AppState>()((set) => ({
   status: 'booting',
-  hudSpeedKph: 0,
+  paused: false,
+  hud: { speedKph: 0, direction: 'neutral' },
   setStatus: (status) => set({ status }),
-  setHudSpeedKph: (hudSpeedKph) => set({ hudSpeedKph }),
+  togglePause: () => set((state) => ({ paused: !state.paused })),
+  setHud: (hud) => set({ hud }),
 }));

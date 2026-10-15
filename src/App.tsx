@@ -18,7 +18,8 @@ export function App() {
   const [simulation] = useState(() => new GameSimulation(VEHICLE_CONFIG));
   const [input] = useState(() => new InputController());
 
-  useEffect(() => input.attach(window), [input]);
+  // The only keyboard listeners in the app. Removed on unmount, and re-attached cleanly under StrictMode.
+  useEffect(() => input.attach(window, document), [input]);
 
   return (
     <>
@@ -36,7 +37,7 @@ export function App() {
         <fog attach="fog" args={[SKY_COLOR, 180, 1500]} />
         <RenderLayer simulation={simulation} input={input} />
       </Canvas>
-      <Hud />
+      <Hud onAction={(action) => input.queueAction(action)} />
       {DebugPanel ? (
         <Suspense fallback={null}>
           <DebugPanel />

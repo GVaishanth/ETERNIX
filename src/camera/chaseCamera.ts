@@ -7,6 +7,7 @@ import type { Vec3, VehicleState } from '../core/types';
  * Chase camera math, in SIMULATION space. The render layer converts the result with
  * toRenderSpace() before applying it to the Three.js camera.
  * The camera sits behind the rear axle along the forward axis and looks ahead of it.
+ * The camera never reads its own orientation to decide steering or motion. It only follows the vehicle.
  */
 
 export interface ChaseCameraState {
@@ -28,15 +29,22 @@ export function createChaseCameraState(): ChaseCameraState {
   };
 }
 
+/** Camera distance behind the rear axle: a base distance plus a speed-based pull-back, capped. */
+export function computeChaseDistance(speed: number, config: ChaseCameraConfig): number {
+  const pullBack = Math.min(Math.abs(speed) * config.distancePerSpeedMeters, config.maxSpeedDistanceMeters);
+  return config.distanceBehindMeters + pullBack;
+}
+
 /** Ideal camera position and look-at point for the given vehicle pose. No smoothing. */
 export function computeChaseGoals(pose: VehicleState, config: ChaseCameraConfig): ChaseCameraGoals {
   const forward = forwardFromYaw(pose.yaw);
   const base = pose.position;
+  const distance = computeChaseDistance(pose.speed, config);
   return {
     position: {
-      x: base.x - forward.x * config.distanceBehindMeters,
+      x: base.x - forward.x * distance,
       y: base.y + config.heightMeters,
-      z: base.z - forward.z * config.distanceBehindMeters,
+      z: base.z - forward.z * distance,
     },
     target: {
       x: base.x + forward.x * config.lookAheadMeters,
@@ -48,7 +56,9 @@ export function computeChaseGoals(pose: VehicleState, config: ChaseCameraConfig)
 
 /**
  * Moves the camera toward its goals using frame-rate-independent damping.
- * The first call snaps to the goals so the camera does not sweep in from the origin.
+ * The first call, or any call after `state.initialized` is cleared (for example, on vehicle reset),
+ * snaps to the goals so the camera does not sweep in from a stale position.
+ * A zero dt leaves the camera where it is, which is how pause freezes it.
  */
 export function updateChaseCamera(
   state: ChaseCameraState,

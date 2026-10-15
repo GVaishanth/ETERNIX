@@ -19,6 +19,8 @@ export interface InputState {
   throttle: number;
   /** 0..1 */
   brake: number;
+  /** 0 = released, 1 = held. */
+  handbrake: number;
 }
 
 /** Complete kinematic state of the player vehicle. Treated as immutable: each step returns a new object. */

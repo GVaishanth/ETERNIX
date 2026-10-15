@@ -1,24 +1,15 @@
-import { useEffect } from 'react';
 import { useDiagnosticsStore } from './diagnosticsStore';
 import { formatSnapshot } from './format';
 
 /**
- * Development-only overlay. Toggle with the backtick key. It is read-only and
+ * Development-only overlay. The backtick key toggles it through the single input controller
+ * (the 'debugPanel' action), not through a listener of its own. It is read-only and
  * pointer-events are disabled, so it never intercepts input.
  */
 export function DebugPanel() {
   const snapshot = useDiagnosticsStore((state) => state.snapshot);
   const errors = useDiagnosticsStore((state) => state.errors);
   const panelVisible = useDiagnosticsStore((state) => state.panelVisible);
-  const togglePanel = useDiagnosticsStore((state) => state.togglePanel);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.code === 'Backquote' && !event.repeat) togglePanel();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [togglePanel]);
 
   if (!panelVisible) return null;
 

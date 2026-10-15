@@ -2,6 +2,7 @@ import type { ChaseCameraState } from '../camera/chaseCamera';
 import { forwardFromYaw, toRenderSpace } from '../core/coordinates';
 import { metersPerSecondToKph, RAD_TO_DEG } from '../core/units';
 import type { InputState, Vec3, VehicleState } from '../core/types';
+import { getDriveDirection, type DriveDirection } from '../simulation/vehicle';
 
 /** A plain, serializable view of the simulation and renderer state for the debug panel. */
 
@@ -34,6 +35,10 @@ export interface DiagnosticsSnapshot {
     yawRateDegPerSec: number;
   };
   input: InputState & { pressedKeys: string[] };
+  control: {
+    paused: boolean;
+    direction: DriveDirection;
+  };
   physics: {
     mode: string;
     fixedStepSeconds: number;
@@ -63,6 +68,7 @@ export interface SnapshotInput {
   vehicle: VehicleState;
   input: InputState;
   pressedKeys: string[];
+  paused: boolean;
   physics: DiagnosticsSnapshot['physics'];
   vehicleInFrustum: boolean;
   roadInFrustum: boolean;
@@ -96,6 +102,10 @@ export function buildDiagnosticsSnapshot(input: SnapshotInput): DiagnosticsSnaps
       yawRateDegPerSec: vehicle.yawRate * RAD_TO_DEG,
     },
     input: { ...input.input, pressedKeys: input.pressedKeys },
+    control: {
+      paused: input.paused,
+      direction: getDriveDirection(vehicle.speed),
+    },
     physics: input.physics,
     assets: {
       mode: ASSET_MODE_LABEL,

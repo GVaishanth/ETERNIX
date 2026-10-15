@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHASE_CAMERA_CONFIG } from '../config/cameraConfig';
 import type { VehicleState } from '../core/types';
-import { computeChaseGoals, createChaseCameraState, updateChaseCamera } from './chaseCamera';
+import { computeChaseDistance, computeChaseGoals, createChaseCameraState, updateChaseCamera } from './chaseCamera';
 
 function poseAt(yaw: number, x = 0, z = 0): VehicleState {
   return {
@@ -55,5 +55,23 @@ describe('updateChaseCamera', () => {
     const pose = poseAt(0, 0, 100);
     for (let i = 0; i < 600; i += 1) updateChaseCamera(state, pose, CHASE_CAMERA_CONFIG, 1 / 60);
     expect(state.position.z).toBeCloseTo(100 - CHASE_CAMERA_CONFIG.distanceBehindMeters, 3);
+  });
+});
+
+describe('speed-dependent camera distance', () => {
+  it('stays at the base distance when stopped', () => {
+    expect(computeChaseDistance(0, CHASE_CAMERA_CONFIG)).toBe(CHASE_CAMERA_CONFIG.distanceBehindMeters);
+  });
+
+  it('pulls back as speed rises, and caps the pull-back', () => {
+    const slow = computeChaseDistance(10, CHASE_CAMERA_CONFIG);
+    const fast = computeChaseDistance(30, CHASE_CAMERA_CONFIG);
+    expect(fast).toBeGreaterThan(slow);
+    const absurd = computeChaseDistance(1000, CHASE_CAMERA_CONFIG);
+    expect(absurd).toBeCloseTo(CHASE_CAMERA_CONFIG.distanceBehindMeters + CHASE_CAMERA_CONFIG.maxSpeedDistanceMeters, 9);
+  });
+
+  it('keeps the same distance for reverse speed as for forward speed of equal magnitude', () => {
+    expect(computeChaseDistance(-12, CHASE_CAMERA_CONFIG)).toBeCloseTo(computeChaseDistance(12, CHASE_CAMERA_CONFIG), 9);
   });
 });

@@ -26,7 +26,7 @@ function flag(value: boolean): string {
 }
 
 export function formatSnapshot(snapshot: DiagnosticsSnapshot): DebugSection[] {
-  const { renderer, camera, vehicle, input, physics, assets, visibility } = snapshot;
+  const { renderer, camera, vehicle, input, control, physics, assets, visibility } = snapshot;
   return [
     {
       title: 'Renderer',
@@ -63,7 +63,15 @@ export function formatSnapshot(snapshot: DiagnosticsSnapshot): DebugSection[] {
       rows: [
         { label: 'steer (-1 L .. +1 R)', value: fixed(input.steer, 2) },
         { label: 'throttle / brake', value: `${fixed(input.throttle, 2)} / ${fixed(input.brake, 2)}` },
+        { label: 'handbrake', value: flag(input.handbrake > 0) },
         { label: 'keys held', value: input.pressedKeys.length > 0 ? input.pressedKeys.join(' ') : '(none)' },
+      ],
+    },
+    {
+      title: 'Control',
+      rows: [
+        { label: 'paused', value: flag(control.paused) },
+        { label: 'direction', value: control.direction },
       ],
     },
     {

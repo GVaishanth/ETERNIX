@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { FIXED_STEP_SECONDS } from '../config/simulationConfig';
+import { FIXED_STEP_SECONDS, VEHICLE_SPAWN } from '../config/simulationConfig';
 import { VEHICLE_CONFIG } from '../config/vehicleConfig';
 import type { InputState } from '../core/types';
 import { GameSimulation } from './gameSimulation';
 
-const THROTTLE: InputState = { steer: 0, throttle: 1, brake: 0 };
-const NEUTRAL: InputState = { steer: 0, throttle: 0, brake: 0 };
+const THROTTLE: InputState = { steer: 0, throttle: 1, brake: 0, handbrake: 0 };
+const NEUTRAL: InputState = { steer: 0, throttle: 0, brake: 0, handbrake: 0 };
 
 describe('GameSimulation', () => {
   it('advances in fixed steps regardless of frame rate', () => {
@@ -48,5 +48,17 @@ describe('GameSimulation', () => {
     for (let i = 0; i < 60; i += 1) sim.update(FIXED_STEP_SECONDS, NEUTRAL);
     expect(sim.state.speed).toBe(0);
     expect(sim.state.position.z).toBe(0);
+  });
+
+  it('reset returns to the spawn pose with zero speed and steering', () => {
+    const sim = new GameSimulation(VEHICLE_CONFIG);
+    for (let i = 0; i < 120; i += 1) sim.update(FIXED_STEP_SECONDS, { ...THROTTLE, steer: 1 });
+    expect(sim.state.speed).toBeGreaterThan(0);
+    sim.reset();
+    expect(sim.state.speed).toBe(0);
+    expect(sim.state.yaw).toBe(0);
+    expect(sim.state.steerAngle).toBe(0);
+    expect(sim.state.position).toEqual({ x: VEHICLE_SPAWN.x, y: 0, z: 0 });
+    expect(sim.getRenderState().position).toEqual(sim.state.position);
   });
 });
