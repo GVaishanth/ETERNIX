@@ -71,6 +71,22 @@ export interface DiagnosticsSnapshot {
     vehicleInFrustum: boolean;
     roadInFrustum: boolean;
   };
+  road: RoadDiagnostics;
+}
+
+/** Road network state for the debug panel. Read-only. */
+export interface RoadDiagnostics {
+  worldId: string;
+  worldLabel: string;
+  segmentCount: number;
+  connectionCount: number;
+  validationValid: boolean;
+  validationIssueCount: number;
+  currentSegmentId: string | null;
+  contact: boolean;
+  contactSteps: number;
+  cameraMode: 'chase' | 'overview';
+  roadDebugVisible: boolean;
 }
 
 export interface SnapshotInput {
@@ -90,6 +106,7 @@ export interface SnapshotInput {
   physics: DiagnosticsSnapshot['physics'];
   vehicleInFrustum: boolean;
   roadInFrustum: boolean;
+  road: RoadDiagnostics;
 }
 
 /** Signed difference a - b in degrees, on the shortest arc, in (-180, 180]. */
@@ -155,5 +172,6 @@ export function buildDiagnosticsSnapshot(input: SnapshotInput): DiagnosticsSnaps
       vehicleInFrustum: input.vehicleInFrustum,
       roadInFrustum: input.roadInFrustum,
     },
+    road: input.road,
   };
 }

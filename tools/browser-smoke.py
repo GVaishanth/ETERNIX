@@ -272,10 +272,12 @@ with sync_playwright() as p:
     wait_snap(page, "s.vehicle.speedMps === 0", timeout_ms=30000)
     page.keyboard.down("KeyS")
     page.wait_for_timeout(500)
+    # Read while Space and S are still held: the check is "blocks reverse creep while S is held". Reading after release
+    # would include the brake-pedal release ramp (about -0.1 m/s roll-back), which is a separate, known transient.
+    s_hb = snap(page)
     page.keyboard.up("KeyS")
     page.keyboard.up("Space")
     settle(page)
-    s_hb = snap(page)
     check("handbrake stops the car and blocks reverse creep while S is held",
           s_hb["vehicle"]["speedMps"] == 0 and abs(s_hb["vehicle"]["speedMps"]) < 1e-9,
           f"speed={s_hb['vehicle']['speedMps']:.3f}")

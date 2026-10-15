@@ -12,12 +12,15 @@ export const KEY_BINDINGS = {
   handbrake: ['Space'],
 } as const;
 
-export type GameAction = 'pause' | 'reset' | 'debugPanel';
+/** `roadDebug` and `overview` are development views. The loop ignores them in production builds. */
+export type GameAction = 'pause' | 'reset' | 'debugPanel' | 'roadDebug' | 'overview';
 
 export const ACTION_BINDINGS: Readonly<Record<GameAction, readonly string[]>> = {
   pause: ['Escape'],
   reset: ['KeyR'],
   debugPanel: ['Backquote'],
+  roadDebug: ['KeyG'],
+  overview: ['KeyO'],
 };
 
 /** Keys that would otherwise scroll the page or activate focused controls while driving. */

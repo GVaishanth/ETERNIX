@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { CHASE_CAMERA_CONFIG } from './config/cameraConfig';
 import { VEHICLE_CONFIG } from './config/vehicleConfig';
 import { GameSimulation } from './engine/gameSimulation';
+import { getWorldDefinition, parseWorldId } from './world/worlds';
 import { InputController } from './input/inputController';
 import { RenderLayer } from './render/RenderLayer';
 import { Hud } from './ui/Hud';
@@ -15,7 +16,9 @@ const DebugPanel = import.meta.env.DEV
   : null;
 
 export function App() {
-  const [simulation] = useState(() => new GameSimulation(VEHICLE_CONFIG));
+  // ?world=legacy loads the preserved straight road. Any other value loads the test circuit (Part 3 default).
+  const [world] = useState(() => getWorldDefinition(parseWorldId(window.location.search)));
+  const [simulation] = useState(() => new GameSimulation(VEHICLE_CONFIG, { spawn: world.spawn, boundary: world.boundary }));
   const [input] = useState(() => new InputController());
 
   // The only keyboard listeners in the app. Removed on unmount, and re-attached cleanly under StrictMode.
@@ -35,7 +38,7 @@ export function App() {
       >
         <color attach="background" args={[SKY_COLOR]} />
         <fog attach="fog" args={[SKY_COLOR, 180, 1500]} />
-        <RenderLayer simulation={simulation} input={input} />
+        <RenderLayer simulation={simulation} input={input} world={world} />
       </Canvas>
       <Hud onAction={(action) => input.queueAction(action)} />
       {DebugPanel ? (

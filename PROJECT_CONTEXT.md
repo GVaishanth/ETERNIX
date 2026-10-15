@@ -8,10 +8,11 @@ A browser-based 3D open-world street racing game inspired by Need for Speed: Mos
 The goal of the whole project is a stable, extensible foundation for later phases: vehicle handling,
 world content, traffic, police AI, progression, UI, audio, and presentation.
 
-**Current phase: Part 2 (driving quality), built on Part 1 and Phase 0.** The scene has a procedural
-car, a two-lane road with markings, shoulders, roadside props, a chase camera, a small HUD, and keyboard
-driving with pause and reset. Traffic, police, a city, progression, and purchasing are out of scope and
-do not exist yet. Part 2 has not been started.
+**Current phase: Part 3 (road network), built on Part 2, Part 1 and Phase 0.** The scene has a procedural
+car with Part 2 handling, and two roads. The **test circuit** (default, `/`) is a connected 12-segment road network
+with junctions, arcs, validated connections, guardrails, and a DEV road debug view. The **legacy straight road**
+is still reachable with `?world=legacy` and is kept as the reference. Traffic, police, a city, progression, and
+purchasing are out of scope and do not exist yet. The full city phase has not been started.
 
 ## 2. Audit summary (as found at Phase 0)
 
@@ -195,6 +196,19 @@ Rules:
   - Drive direction readout: `drive` above 0.1 m/s forward, `reverse` below −0.1 m/s, `neutral` otherwise. The HUD
     shows D, R, or N only. No RPM and no gear are simulated or displayed.
 
+### Road boundary (Part 3, test circuit only)
+
+- `simulation/roadBoundary.ts` holds the drivable region as a signed distance field (SDF). Negative inside.
+- The car footprint is four corners (rear 0.8 m, front 3.7 m, half-width 0.925 m). A corner outside the region is
+  pushed out along the numeric SDF gradient (epsilon 0.02 m), for up to 3 iterations, to a clearance of 0.002 m.
+- The velocity component along the boundary normal is removed. Tangential speed is kept at 0.999 per contact step
+  (`wallTangentialRetentionPerStep`).
+- The boundary never adds force. It does not use a physics engine, and there are no custom forces on top of
+  physics. There is one movement system (`stepVehicle`).
+- The contact flag lives in `GameSimulation`, not in `VehicleState`.
+- The guardrails are visual, built from the same SDF samples (|sdf| < 0.01 for rail points, tested).
+- Open junctions have no walls across the pad mouth, so the car can pass through them.
+
 ## 7. Input
 
 - `input/inputController.ts` is the **only** keyboard system. `attach(window, document)` registers the
@@ -222,6 +236,10 @@ Rules:
 
 ## 8. Camera
 
+- Part 3 adds an overview camera (DEV only, `O`) that looks at the whole circuit from a fixed point. Toggling it back
+  resets the chase state. The chase camera follows heading and never reads road geometry to correct orientation.
+  Road errors are fixed in the road, not by rotating the camera.
+
 - Chase-camera math (`camera/chaseCamera.ts`) is pure and runs in simulation space. Tuning is in
   `config/cameraConfig.ts`.
 - **Heading:** the camera has its own heading, which lags the vehicle yaw with a 5 /s damped follow along the
@@ -242,9 +260,29 @@ Rules:
 - **No external assets.** Everything is procedural: road, shoulders, markings, ground, car, posts, trees, arrows.
 - **Car:** built from `vehicleLayout.ts` with a body, cabin, glass, headlights and tail lights (emissive boxes),
   amber indicator markers (static, not blinking), and four wheels. It is a placeholder, not a real model.
-- **Road:** two lanes of 3.6 m, a double yellow center line, white edge lines, 3 m shoulders, distance markers
-  every 100 m (major every 1000 m), and forward arrows on the right lane every 120 m. The road runs from
-  z = −100 to z = 4000 m.
+- **Legacy road** (`?world=legacy`, kept as the reference): two lanes of 3.6 m, a double yellow center line, white
+  edge lines, 3 m shoulders, distance markers every 100 m (major every 1000 m), and forward arrows on the right
+  lane every 120 m. The road runs from z = −100 to z = 4000 m. It has no collider and no boundary.
+- **Test circuit road network** (default world, Part 3). Flat, 4 lanes two-way (2 per direction, 3.6 m each,
+  14.4 m total), 3 m shoulders, right-hand traffic. Boundary half-width 10.2 m. Spawn on the inner right lane at
+  (1.8, 0, 6), yaw 0.
+  - Data model in `world/roadTypes.ts`: `RoadSegment` (kinds `straight`, `arc`, `junction`), `RoadPort` (position,
+    outward heading, width, elevation), `RoadConnection` (explicit port pair), `RoadNetwork` (segments, connections,
+    spawn). Builders are pure and deterministic (`world/roadBuilders.ts`, `world/circuitNetwork.ts`).
+  - Validation (`world/roadValidation.ts`): a connection is valid when its ports are within 0.01 m, outward headings
+    are opposite (dot ≤ −0.999), and width and elevation match. Dangling ports must be terminal. Mismatches are
+    reported with segment ids. Nothing is snapped silently.
+  - Geometry (`world/roadGeometry.ts`, `world/roadMeshData.ts`): one mesh build per network. Asphalt ribbons,
+    shoulders, markings at y 0.012 with polygon offset (no z-fighting), dashed lane dividers, double yellow center,
+    solid edges, direction arrows, stop lines at junction arms, guardrails on the outer shoulder edge, posts every
+    6 m, and dead-end cap rails. Built from shared materials. No material per marking.
+  - Circuit layout (counter-clockwise rounded rectangle): S1 north on x = 0 from z 0 to 200; T1 left arc (R 60) to
+    (−60, 260); S2 west at z 260, split by the junction pad at (−180, 260) into S2a and S2b; T2 to (−360, 200); S3
+    south to (−360, 0); T3 to (−300, −60); S4 east to (−60, −60); T4 back to (0, 0). The pad has spurs N (150 m,
+    terminal) and S (150 m, terminal). Lane length of the loop is about 1,267 m including the pad.
+  - Ground is a finite patch (half-extent 700 m). Static blocks and posts are simple validation props.
+  - Edge boundary: a signed-distance union of rectangles (straights), annular sectors (arcs), and boxes (pad). See
+    section 6, Road boundary.
 - **Props:** instanced roadside posts every 25 m and trees every 60 m, outside the shoulders.
 - Planned convention for later phases: `public/assets/{models,textures,audio}/`, loaded through a single loader
   that caches by URL and disposes on unload. Diagnostics currently report `external models: 0`.
@@ -271,6 +309,9 @@ Rules:
 - Dispose: R3F disposes JSX-declared geometries and materials on unmount. Manually created geometry is disposed
   in an effect cleanup (the arrow geometry). Input listeners are removed by the function returned from `attach()`.
 - Keep `RenderLoop`, which orchestrates the frame, separate from the thin React adapter.
+- Road network: data model, builders, validation, and geometry are pure. Meshes and materials are created once.
+  No per-frame mesh rebuilds, no material per marking, and every geometry and material is disposed on unmount.
+- No physics engine for road collision. Do not add Rapier or custom forces to the same vehicle.
 - Layout values that are pure functions of config are computed at module scope. The React Compiler lint rule
   rejects `useMemo` around them.
 
@@ -291,11 +332,22 @@ Implemented and verified (see sections 14 and 15):
   - HUD: arc gauge, km/h and mph (one conversion function), D/R/N, DRIFT badge
   - central typed tuning, plus a debug snapshot with slip, body, and wheel telemetry (dev only)
 
+- Part 3: road network on the test circuit (see section 9):
+  - typed road data model (segments, ports, connections, network), deterministic builders
+  - programmatic connection validation; mismatches are reported by segment id, never snapped
+  - segment kinds: straight, arc, junction (pad with two terminal spurs)
+  - markings and stop lines from the same centerline samples, with polygon offset
+  - custom SDF boundary with footprint push-out and no added forces; guardrails on the outer shoulder edge
+  - pure pursuit driver used in node tests to drive the full loop
+  - DEV-only overview camera (`O`) and road debug view (`G`): centerlines, segment ids, ports, lane lines,
+    collision rails, junction outlines, connection errors in red. Neither changes geometry or behaviour.
+  - legacy straight road kept behind `?world=legacy`
+
 Not implemented (do not describe as done):
-- Collision and road constraints. The car can drive off the road onto the shoulder and into the grass.
+- Road constraints on the legacy straight road. It has no boundary. The car can leave it, as before.
 - Physics engine (Rapier). Not installed, and not needed for the custom model.
 - Traffic, police AI, AI opponents, a city, career, progression, missions, vehicle purchasing
-- Drift scoring, race events, and the road-network phase (explicitly out of scope for Part 2)
+- Drift scoring, race events, and the open-world city (explicitly out of scope for Parts 2 and 3)
 - Menus beyond the HUD buttons; audio; persistent data (save, settings)
 - External assets, an asset loader, and real vehicle models
 - Blinking indicators and real light sources
@@ -307,7 +359,7 @@ Not implemented (do not describe as done):
   turned in place. This is a gameplay decision to confirm.
 - **Handbrake deceleration changed in Part 2** from 12 to 6 m/s², so drifts are viable. It still stops the car from
   low speed and still blocks reverse creep at standstill.
-- **Speed readout overlaps the gauge.** The "km/h" unit and the mph line sit over the ends of the arc gauge at the
+- **Speed readout overlaps the gauge (Part 2, not fixed).** The "km/h" unit and the mph line sit over the ends of the arc gauge at the
   default size. Cosmetic. Not yet fixed.
 - **Wheel-steer and wheel-spin visuals are verified by unit tests only.** The rig math is tested in Three.js
   (`render/vehicleRig.test.ts`). The browser check confirms the telemetry, but the wheel angles were not visually
@@ -316,7 +368,22 @@ Not implemented (do not describe as done):
   data. The single-track model has no load transfer. Body roll and pitch are cosmetic only.
 - **Mass is not a parameter.** Accelerations are specified in m/s², so mass would cancel. Yaw inertia is the yaw
   response lag (0.12 s) instead.
-- **Vehicle leaves the road.** There are no road constraints. Expected at this stage.
+- **Vehicle leaves the road (legacy road only).** `?world=legacy` has no boundary, by design: it is the reference.
+- **Keyboard lap lane tracking is about 3 m.** The browser lap uses binary keys at about 20 fps (800×475). Peak lane
+  error was 2.85 m and 2.96 m over two runs, against a 3.0 m limit. The node drivers hold the road to 1.1 m (analog)
+  and 1.44 m (binary). The gap is the control rate of the test driver, not the road: no contact, no stall, and
+  control kept through the junction. Smoother steering needs analog input, which the keyboard does not provide.
+- **Brake-pedal release roll-back.** Releasing S and Space together lets the car roll back about 0.1 m/s while the
+  brake pedal ramp finishes. The handbrake check reads speed while both keys are held, which is what the check
+  names. Not fixed.
+- **Overview panel label.** With the overview camera on, the debug panel's "camera mode" reads `overview`, but
+  "active" still reads `ChaseCamera` (the sim camera, which keeps running). Cosmetic.
+- **Dev names remain in the production bundle as dead code.** `toggleRoadDebug`, `roadDebugVisible`, `togglePanel`,
+  `panelVisible`, and `vehicleInFrustum` appear in `dist/`. The overlay and panel UI are not emitted (no
+  `__STREET_RACER_DEBUG__`, `DEV DIAGNOSTICS`, or road overlay code). These names were already in the Part 2 bundle.
+  Pre-existing.
+- **Junction visuals.** Stop lines, the pad, and arrows were checked in the chase-camera and overview screenshots.
+  They were not checked at close range in a browser.
 - **Spawn marker.** A distance marker sits on z = 0, under the spawn position, so it appears beneath the car at launch.
 - **Simulated time falls behind wall time on slow renderers.** The software WebGL used in this sandbox runs at about
   5 fps, and the substep cap then drops simulated time (the debug panel showed about 0.7 s dropped). On real GPUs
@@ -325,7 +392,7 @@ Not implemented (do not describe as done):
   The vehicle check is an AABB test with no occlusion.
 - **Debug panel CSS ships in the production stylesheet.** The panel's JavaScript and strings are absent from
   the production bundle, but its `.debug-panel` rules remain in the CSS. Harmless; move them if the CSS needs trimming.
-- **Bundle size warning.** The main chunk is about 1.15 MB (about 317 kB gzipped), mostly Three.js. Code-splitting
+- **Bundle size warning.** The main chunk is about 1.19 MB (about 328 kB gzipped), mostly Three.js. Code-splitting
   the renderer is a later optimization.
 - **Third-party warning.** R3F 9.8.2 uses `THREE.Clock`, which Three.js r186 marks deprecated. Not project code.
 - **Instanced mesh disposal.** `InstancedSet` calls `dispose()` on unmount. This has been checked by mounting and
@@ -333,7 +400,22 @@ Not implemented (do not describe as done):
 
 ## 14. Tests that must pass
 
-Run `npm test`. Currently **177 tests across 14 files**:
+Run `npm test`. Currently **257 tests across 22 files**. Part 3 added these:
+
+- `world/roadGeometry.test.ts`, `world/roadValidation.test.ts`: geometry, port matching, and mismatch reports
+- `world/roadMeshData.test.ts`: buffers, stop lines, arrows, marking alignment, and containment of arm end caps
+- `world/roadDebugData.test.ts`: labels, layers, zero issues on the circuit, and a red line for a moved port
+- `world/worlds.test.ts`: `parseWorldId`, circuit and legacy definitions, and caching
+- `world/roadLayout.test.ts` (Part 1/2, legacy road, unchanged)
+- `simulation/roadBoundary.test.ts`: SDF sign, push-out, velocity constraint, and no added forces (19 tests)
+- `engine/gameSimulation.test.ts`: spawn, boundary, and contact accessors
+- `engine/circuitDrive.test.ts`: pure-pursuit lap, analog and binary, no NaN, no teleport, all loop segments visited,
+  junction control, no contact on the reference line, and cross-track under 1.5 m, plus the dead-end stop test
+- `engine/circuitCamera.test.ts`: 9 tests over the full lap (car ahead, distance and height bounds, no snap,
+  heading lag under 10°, look-at on road over 95% of samples, FOV step)
+- `input/keyBindings.test.ts`: KeyG (roadDebug) and KeyO (overview)
+
+Part 1/2 tests (for reference):
 
 - `core/coordinates.test.ts`: forward/right convention, toRenderSpace
 - `core/math.test.ts`: clamp, moveTowards, wrapAngle, shortest angle, damping
@@ -374,9 +456,23 @@ Run from the project root (`/home/user/street-racer`):
 | `npm run build` | Typecheck, then production build to `dist/` |
 | `npm run preview` | Serve the built app on 0.0.0.0:4173 |
 | `npm run check` | typecheck, lint, test, build in sequence |
-| `python3 tools/browser-smoke.py [url] [outdir]` | Browser checks against a running dev server (needs Playwright) |
+| `python3 tools/browser-smoke.py [url] [outdir]` | Part 1/2 browser checks against a running dev server (needs Playwright). Use `?world=legacy`. |
+| `python3 tools/browser-road.py [url] [outdir]` | Part 3 browser checks: boot, drive, steer sign, overlay, overview, boundary, reset, and one keyboard lap on the circuit |
 
 Node 20.19+ or 22.12+ is required (Vite 8).
+
+Verification in Part 3 (run in this sandbox, not on a real GPU):
+- `npm run check`: typecheck, lint, **257 tests in 22 files**, and production build all pass.
+- Production build: one chunk, `index-C73jxONh.js`, 1,188.50 kB (328 kB gzip). The `chunkSizeWarningLimit` warning is
+  pre-existing. No debug strings in the bundle (see section 13 for the dead names).
+- Production preview (`vite preview`, port 4173): circuit and legacy load with no page errors and no failed requests.
+  Console shows only the known three.js and GL driver messages.
+- `tools/browser-road.py` against the dev server: **25 of 25 checks passed** (the lap's lane check is 3.0 m; see
+  section 13).
+- `tools/browser-smoke.py?world=legacy`: **60 of 60 checks passed**. The handbrake check now reads speed while S and
+  Space are held (see section 13).
+- Node: the analog lap has a maximum cross-track of 1.11 m and the binary lap 1.44 m, both with zero contact steps.
+- Screenshots and reports: `/home/user/verification/part3/` (`report.json`, `lap_trace.json`, `legacy/`, `prod/`).
 
 Verification in Part 2 (run in the live dev server, with the browser check):
 - `npm run check`: typecheck, lint, **177 tests in 14 files**, and production build all pass.
@@ -391,8 +487,9 @@ Verification in Part 2 (run in the live dev server, with the browser check):
   vary with frame timing.
 - Drift sample: slip −12.5° at 13.5 m/s, then −0.53° after release.
 
-Browser tooling note: Playwright and Chromium were installed in this sandbox for the Part 2 run. They are not part of
-the project's dependencies.
+Browser tooling note: Playwright and Chromium were installed in this sandbox. They are not part of the project's
+dependencies. The Chromium cache is not kept across sandbox restores, so run `python3 -m playwright install chromium`
+first.
 
 ## 16. Rules for future development prompts
 
@@ -406,3 +503,5 @@ the project's dependencies.
 8. Add a Rapier or GSAP dependency only in the phase that uses it, and record the exact version here.
 9. Mark items as done only after the tests pass and the behavior is verified in the running app.
 10. Update sections 12 (status), 13 (known issues), and 14 (tests) at the end of every phase.
+11. Road connections are explicit port pairs and must pass validation. Never snap incompatible segments silently.
+12. Do not compensate for road orientation errors with the camera or the input. Fix the road or the controller.

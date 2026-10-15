@@ -22,6 +22,8 @@ import { buildDiagnosticsSnapshot, PHYSICS_MODE_LABEL, type RendererStatus } fro
 import { isBoundsInFrustum, updateFrustumFromCamera } from '../diagnostics/visibility';
 import { getDriveDirection, isDrifting } from '../simulation/vehicle';
 import { getRoadSegmentBoundsSim } from '../world/roadLayout';
+import type { WorldDefinition } from '../world/worlds';
+import { validateRoadNetwork } from '../world/roadValidation';
 import { renderBoundsFromSim, setRenderVector } from './renderSpace';
 import { applyVehicleRig, resolveVehicleRig, type VehicleRig } from './vehicleRig';
 
@@ -37,6 +39,10 @@ import { applyVehicleRig, resolveVehicleRig, type VehicleRig } from './vehicleRi
 const DIAGNOSTICS_ENABLED = import.meta.env.DEV;
 const CHASE_CAMERA_NAME = 'ChaseCamera';
 const NEUTRAL_INPUT: InputState = { steer: 0, throttle: 0, brake: 0, handbrake: 0 };
+/** Development overview camera pose, simulation space. Fixed above the test circuit, looking at its centre. */
+const OVERVIEW_POSITION = { x: -180, y: 500, z: -260 };
+const OVERVIEW_TARGET = { x: -180, y: 0, z: 170 };
+const OVERVIEW_FOV_DEGREES = 55;
 
 export interface RenderTickContext {
   deltaSeconds: number;
@@ -82,7 +88,11 @@ export class RenderLoop {
   private readonly frustum = new Frustum();
   private readonly vehicleBounds = new Box3();
   private readonly roadBounds = new Box3();
+  private readonly worldBounds: Box3 | null;
+  private readonly world: WorldDefinition;
+  private readonly roadValidation: { valid: boolean; issueCount: number; connectionCount: number } | null;
   private readonly cameraTarget = new Vector3();
+  private overview = false;
   private rigRoot: Group | null = null;
   private rig: VehicleRig | null = null;
   private vehicleInFrustum = false;
@@ -90,9 +100,22 @@ export class RenderLoop {
   private frameCount = 0;
   private started = false;
 
-  constructor(simulation: GameSimulation, input: InputController) {
+  constructor(simulation: GameSimulation, input: InputController, world: WorldDefinition) {
     this.simulation = simulation;
     this.input = input;
+    this.world = world;
+    this.worldBounds = world.bounds
+      ? new Box3(
+          new Vector3(world.bounds.minX, -1, world.bounds.minZ),
+          new Vector3(world.bounds.maxX, 1, world.bounds.maxZ),
+        )
+      : null;
+    if (world.network) {
+      const report = validateRoadNetwork(world.network);
+      this.roadValidation = { valid: report.valid, issueCount: report.issues.length, connectionCount: report.connectionCount };
+    } else {
+      this.roadValidation = null;
+    }
   }
 
   tick(context: RenderTickContext): void {
@@ -114,14 +137,25 @@ export class RenderLoop {
     const rig = this.resolveRig(vehicle);
     if (rig) applyVehicleRig(rig, pose, this.simulation.getRenderBody());
 
-    // A zero step while paused freezes the camera. Reset snaps it because `initialized` was cleared.
-    updateChaseCamera(this.chase, pose, CHASE_CAMERA_CONFIG, VEHICLE_CONFIG.maxForwardSpeedMps, paused ? 0 : frameSeconds);
-    if (camera.fov !== this.chase.fovDegrees) {
-      camera.fov = this.chase.fovDegrees;
-      camera.updateProjectionMatrix();
+    if (this.overview) {
+      // Development overview: a fixed pose, so the road layout can be checked at a glance. The chase state is
+      // not advanced, and it snaps back on exit.
+      if (camera.fov !== OVERVIEW_FOV_DEGREES) {
+        camera.fov = OVERVIEW_FOV_DEGREES;
+        camera.updateProjectionMatrix();
+      }
+      setRenderVector(camera.position, OVERVIEW_POSITION);
+      camera.lookAt(setRenderVector(this.cameraTarget, OVERVIEW_TARGET));
+    } else {
+      // A zero step while paused freezes the camera. Reset snaps it because `initialized` was cleared.
+      updateChaseCamera(this.chase, pose, CHASE_CAMERA_CONFIG, VEHICLE_CONFIG.maxForwardSpeedMps, paused ? 0 : frameSeconds);
+      if (camera.fov !== this.chase.fovDegrees) {
+        camera.fov = this.chase.fovDegrees;
+        camera.updateProjectionMatrix();
+      }
+      setRenderVector(camera.position, this.chase.position);
+      camera.lookAt(setRenderVector(this.cameraTarget, this.chase.target));
     }
-    setRenderVector(camera.position, this.chase.position);
-    camera.lookAt(setRenderVector(this.cameraTarget, this.chase.target));
 
     if (!this.started) {
       this.started = true;
@@ -159,6 +193,16 @@ export class RenderLoop {
       case 'debugPanel':
         if (DIAGNOSTICS_ENABLED) useDiagnosticsStore.getState().togglePanel();
         break;
+      case 'roadDebug':
+        if (DIAGNOSTICS_ENABLED) useDiagnosticsStore.getState().toggleRoadDebug();
+        break;
+      case 'overview':
+        if (DIAGNOSTICS_ENABLED) {
+          this.overview = !this.overview;
+          // Leaving the overview snaps the chase camera back to the car, with no sweep from the overview pose.
+          this.chase.initialized = false;
+        }
+        break;
       default: {
         const unhandled: never = action;
         throw new Error(`Unhandled action: ${String(unhandled)}`);
@@ -191,8 +235,14 @@ export class RenderLoop {
       this.vehicleBounds.setFromObject(vehicle);
       this.vehicleInFrustum = isBoundsInFrustum(this.frustum, this.vehicleBounds);
       // Visibility is checked on the road stretch around the car, not the whole 4 km road.
-      const segment = getRoadSegmentBoundsSim(this.simulation.state.position.z, ROAD_CHECK_BEHIND_METERS, ROAD_CHECK_AHEAD_METERS);
-      this.roadBounds.copy(renderBoundsFromSim(segment));
+      if (this.worldBounds) {
+        // A network world: the whole network is one bounds check, computed once at construction.
+        this.roadBounds.copy(this.worldBounds);
+      } else {
+        // Legacy straight road: check only the stretch around the car.
+        const segment = getRoadSegmentBoundsSim(this.simulation.state.position.z, ROAD_CHECK_BEHIND_METERS, ROAD_CHECK_AHEAD_METERS);
+        this.roadBounds.copy(renderBoundsFromSim(segment));
+      }
       this.roadInFrustum = isBoundsInFrustum(this.frustum, this.roadBounds);
     }
 
@@ -225,6 +275,19 @@ export class RenderLoop {
         },
         vehicleInFrustum: this.vehicleInFrustum,
         roadInFrustum: this.roadInFrustum,
+        road: {
+          worldId: this.world.id,
+          worldLabel: this.world.label,
+          segmentCount: this.world.network?.segments.length ?? 0,
+          connectionCount: this.roadValidation?.connectionCount ?? 0,
+          validationValid: this.roadValidation?.valid ?? true,
+          validationIssueCount: this.roadValidation?.issueCount ?? 0,
+          currentSegmentId: this.simulation.currentRoadSegmentId,
+          contact: this.simulation.roadContact,
+          contactSteps: this.simulation.roadContactSteps,
+          cameraMode: this.overview ? 'overview' : 'chase',
+          roadDebugVisible: useDiagnosticsStore.getState().roadDebug,
+        },
       }),
     );
   }

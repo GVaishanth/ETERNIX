@@ -19,6 +19,15 @@ export interface VehicleConfig {
   /** Wheel radius. Drives wheel spin: spin (rad) = distance traveled / radius. */
   readonly wheelRadiusMeters: number;
 
+  // ---- Collision footprint, relative to the rear-axle reference point. Used only for road boundaries. ----
+  /** Distance from the rear-axle point to the rear of the body. Matches the body in vehicleLayout.ts. */
+  readonly footprintRearMeters: number;
+  /** Distance from the rear-axle point to the nose. */
+  readonly footprintFrontMeters: number;
+  readonly footprintHalfWidthMeters: number;
+  /** Fraction of tangential speed kept per fixed step while in contact with a boundary. Friction only, not a force. */
+  readonly wallTangentialRetentionPerStep: number;
+
   // ---- Pedal response. Pedals ramp toward their target; they do not jump. (1/s) ----
   /** How fast the throttle pedal rises toward full. */
   readonly throttleRisePerSecond: number;
@@ -111,6 +120,11 @@ export const VEHICLE_CONFIG: VehicleConfig = {
   bodyWidthMeters: 1.85,
   bodyHeightMeters: 0.6,
   wheelRadiusMeters: 0.33,
+
+  footprintRearMeters: 0.8,
+  footprintFrontMeters: 3.7,
+  footprintHalfWidthMeters: 0.925,
+  wallTangentialRetentionPerStep: 0.999,
 
   throttleRisePerSecond: 3.0,
   throttleReleasePerSecond: 5.0,

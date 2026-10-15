@@ -26,8 +26,21 @@ function flag(value: boolean): string {
 }
 
 export function formatSnapshot(snapshot: DiagnosticsSnapshot): DebugSection[] {
-  const { renderer, camera, vehicle, body, input, control, physics, assets, visibility } = snapshot;
+  const { renderer, camera, vehicle, body, input, control, physics, assets, visibility, road } = snapshot;
   return [
+    {
+      title: 'Road network',
+      rows: [
+        { label: 'world', value: `${road.worldId} (${road.worldLabel})` },
+        { label: 'segments / connections', value: `${road.segmentCount} / ${road.connectionCount}` },
+        { label: 'connection check', value: road.validationValid ? 'valid' : `${road.validationIssueCount} issue(s), see overlay (G)` },
+        { label: 'current segment', value: road.currentSegmentId ?? 'none' },
+        { label: 'boundary contact', value: flag(road.contact) },
+        { label: 'contact steps', value: String(road.contactSteps) },
+        { label: 'camera mode', value: road.cameraMode },
+        { label: 'road overlay (G)', value: flag(road.roadDebugVisible) },
+      ],
+    },
     {
       title: 'Renderer',
       rows: [

@@ -56,6 +56,8 @@ describe('key classification', () => {
     expect(actionForKeyCode('Escape')).toBe('pause');
     expect(actionForKeyCode('KeyR')).toBe('reset');
     expect(actionForKeyCode('Backquote')).toBe('debugPanel');
+    expect(actionForKeyCode('KeyG')).toBe('roadDebug');
+    expect(actionForKeyCode('KeyO')).toBe('overview');
     expect(actionForKeyCode('KeyW')).toBeNull();
   });
 });
