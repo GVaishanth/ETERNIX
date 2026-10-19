@@ -67,7 +67,8 @@ export function isDrifting(state: VehicleState, config: VehicleConfig): boolean 
   return (
     Math.abs(state.speed) > DRIFT_MIN_SPEED_MPS &&
     Math.abs(slipAngleRadians(state)) * RAD_TO_DEG > config.driftSlipThresholdDegrees &&
-    computeGripReduction(state.handbrakeLevel, state.speed, config) > 0
+    (computeGripReduction(state.handbrakeLevel, state.speed, config) > 0 ||
+      computePowerOversteer(state.throttlePedal, state.steerAngle, state.speed, config) > 0)
   );
 }
 
@@ -96,6 +97,17 @@ export function computeGripReduction(handbrakeLevel: number, speed: number, conf
   return clamp(handbrakeLevel, 0, 1) * speedGate;
 }
 
+/**
+ * Grip lost to power oversteer, 0 to powerOversteerGripLoss. Needs throttle, a steering angle, and speed above the
+ * drift gate. The steering share is measured against the high-speed steering limit, so full steering at any speed
+ * counts fully. Pure: the same inputs always give the same grip loss.
+ */
+export function computePowerOversteer(throttle: number, steerAngle: number, speed: number, config: VehicleConfig): number {
+  const speedGate = clamp((Math.abs(speed) - config.driftMinSpeedMps) / config.driftSpeedRampMps, 0, 1);
+  const steerShare = clamp(Math.abs(steerAngle) / config.steerAngleHighSpeedRadians, 0, 1);
+  return clamp(throttle, 0, 1) * steerShare * speedGate * config.powerOversteerGripLoss;
+}
+
 /** Pedal targets from raw input. Brake overrides throttle: if both are held, the throttle target is zero. */
 export function pedalTargets(input: InputState): { throttle: number; brake: number } {
   const brake = clamp(input.brake, 0, 1);
@@ -109,7 +121,11 @@ function ramp(current: number, target: number, risePerSecond: number, releasePer
   return moveTowards(current, target, rate * dt);
 }
 
-/** Longitudinal update for one step. Returns the new signed forward speed. */
+/**
+ * Longitudinal update for one step. Returns the new signed forward speed.
+ * `slopeMps2` is gravity along the road: g times the grade, positive uphill. It slows a climb and speeds a descent. It is
+ * applied as a speed change in every branch, so a brake or handbrake hold on a slope still holds the car. Zero on the flat.
+ */
 function nextForwardSpeed(
   speed: number,
   throttle: number,
@@ -117,20 +133,33 @@ function nextForwardSpeed(
   handbrake: number,
   config: VehicleConfig,
   dt: number,
+  slopeMps2: number,
 ): number {
-  if (handbrake > 0) {
+  // The speed change from the slope over this step. Added to the start of every branch below.
+  const pull = -slopeMps2 * dt;
+  const start = speed + pull;
+
+  if (handbrake > 0 && (throttle <= 0 || speed < 0)) {
     // The handbrake slows the car to zero in either direction and holds it there. It never reverses.
-    return moveTowards(speed, 0, config.handbrakeDecelerationMps2 * dt);
+    return moveTowards(start, 0, config.handbrakeDecelerationMps2 * dt);
+  }
+
+  if (handbrake > 0 && brake <= 0) {
+    // Handbrake and throttle together: engine force works against the handbrake deceleration, so the car can
+    // hold a slide. It never reverses, and it stops exactly at zero if the engine cannot hold it.
+    const headroom = clamp(1 - speed / config.engineFadeSpeedMps, 0, 1);
+    const net = throttle * config.engineAccelerationMps2 * headroom - config.handbrakeDecelerationMps2;
+    return clamp(start + net * dt, 0, config.maxForwardSpeedMps);
   }
 
   if (brake > 0 && speed > 0) {
     // Forward braking stops exactly at zero. It cannot overshoot into reverse.
-    return moveTowards(speed, 0, brake * config.brakeDecelerationMps2 * dt);
+    return moveTowards(start, 0, brake * config.brakeDecelerationMps2 * dt);
   }
 
   if (throttle > 0 && speed < 0) {
     // Throttle while reversing brakes the car back to a stop before it can move forward.
-    return moveTowards(speed, 0, throttle * config.brakeDecelerationMps2 * dt);
+    return moveTowards(start, 0, throttle * config.brakeDecelerationMps2 * dt);
   }
 
   let driveAccel = 0;
@@ -145,17 +174,21 @@ function nextForwardSpeed(
 
   // Rolling resistance plus aero drag oppose the current motion. They pull toward zero and never reverse the car.
   const resistance = config.rollingResistanceMps2 + config.airDragPerMeter * speed * speed;
-  let next = speed + driveAccel * dt;
+  let next = start + driveAccel * dt;
   next = moveTowards(next, 0, resistance * dt);
   return clamp(next, -config.maxReverseSpeedMps, config.maxForwardSpeedMps);
 }
 
-/** Advances the vehicle by one fixed step. Returns a new state object. */
+/**
+ * Advances the vehicle by one fixed step. Returns a new state object. `slopeMps2` is g times the road grade under the car,
+ * positive uphill (see nextForwardSpeed). Zero, the default, is the flat road, and the step is unchanged.
+ */
 export function stepVehicle(
   state: VehicleState,
   input: InputState,
   config: VehicleConfig,
   dtSeconds: number,
+  slopeMps2 = 0,
 ): VehicleState {
   if (!(dtSeconds > 0)) return state;
   const dt = dtSeconds;
@@ -172,10 +205,14 @@ export function stepVehicle(
   );
 
   // 2. Longitudinal speed.
-  const speed = nextForwardSpeed(state.speed, throttlePedal, brakePedal, handbrakeTarget, config, dt);
+  const speed = nextForwardSpeed(state.speed, throttlePedal, brakePedal, handbrakeTarget, config, dt, slopeMps2);
 
-  // 3. Tire grip: reduced by the handbrake at speed. Grip reduction is the only drift mechanism.
-  const gripReduction = computeGripReduction(handbrakeLevel, speed, config);
+  // 3. Tire grip: reduced by the handbrake at speed, and by power oversteer (throttle while steering at speed).
+  // Grip reduction is the only drift mechanism.
+  const gripReduction = Math.max(
+    computeGripReduction(handbrakeLevel, speed, config),
+    computePowerOversteer(throttlePedal, state.steerAngle, speed, config),
+  );
   const grip = lerp(config.lateralGripPerSecond, config.lateralGripDriftPerSecond, gripReduction);
   const lateralLimit = lerp(config.maxLateralAccelerationMps2, config.maxDriftLateralAccelerationMps2, gripReduction);
 

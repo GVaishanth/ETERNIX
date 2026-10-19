@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
+import type { Group } from 'three';
 
 /**
  * The single render root for all simulation-space objects. Its Z mirror is the only place that
@@ -6,9 +7,9 @@ import type { ReactNode } from 'react';
  * (see src/core/coordinates.ts). Children use simulation coordinates directly.
  * The camera is NOT a child of this group.
  */
-export function SimRoot({ children }: { children: ReactNode }) {
+export function SimRoot({ children, groupRef }: { children: ReactNode; groupRef?: RefObject<Group | null> }) {
   return (
-    <group name="SimRoot" scale={[1, 1, -1]}>
+    <group ref={groupRef} name="SimRoot" scale={[1, 1, -1]}>
       {children}
     </group>
   );

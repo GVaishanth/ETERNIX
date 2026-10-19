@@ -2,9 +2,9 @@ import { useDiagnosticsStore } from './diagnosticsStore';
 import { formatSnapshot } from './format';
 
 /**
- * Development-only overlay. The backtick key toggles it through the single input controller
- * (the 'debugPanel' action), not through a listener of its own. It is read-only and
- * pointer-events are disabled, so it never intercepts input.
+ * Diagnostics overlay, in every build. Hidden until Shift + ` opens it. The key is handled by the single input
+ * controller (the 'debugPanel' action), not by a listener of its own. It is read-only and pointer-events are
+ * disabled, so it never intercepts input.
  */
 export function DebugPanel() {
   const snapshot = useDiagnosticsStore((state) => state.snapshot);
@@ -14,8 +14,8 @@ export function DebugPanel() {
   if (!panelVisible) return null;
 
   return (
-    <aside className="debug-panel" aria-label="Development diagnostics">
-      <div className="debug-title">DEV DIAGNOSTICS (` to hide)</div>
+    <aside className="debug-panel" aria-label="Diagnostics">
+      <div className="debug-title">Diagnostics (Shift + ` to hide)</div>
       {snapshot === null ? (
         <div>waiting for first frame…</div>
       ) : (

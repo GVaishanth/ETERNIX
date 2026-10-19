@@ -96,6 +96,12 @@ export interface VehicleConfig {
   readonly handbrakeReleaseSeconds: number;
   /** A slip angle above this counts as drifting, for HUD and telemetry. Degrees. */
   readonly driftSlipThresholdDegrees: number;
+  /**
+   * Power oversteer. At speed, steering while on the throttle loses this fraction of the rear grip, scaled by the
+   * throttle and the steering angle. This lets a throttle-held slide start and hold without the handbrake. 0 turns it
+   * off. The value is the same for every car. Upgrades do not change it.
+   */
+  readonly powerOversteerGripLoss: number;
 
   // ---- Visual body response (cosmetic only, never changes the vehicle root) ----
   /** Body pitch per unit longitudinal acceleration. Positive pitch is nose down. rad per (m/s^2). */
@@ -156,6 +162,7 @@ export const VEHICLE_CONFIG: VehicleConfig = {
   handbrakeEngageSeconds: 0.25,
   handbrakeReleaseSeconds: 0.5,
   driftSlipThresholdDegrees: 6,
+  powerOversteerGripLoss: 0.5,
 
   pitchPerAccelRadians: 0.0025,
   rollPerLateralAccelRadians: 0.0025,

@@ -11,6 +11,7 @@ import type { RoadNetwork, RoadSegment } from './roadTypes';
  *
  * Layers (each becomes one merged mesh with one shared material):
  *   asphalt        road surface and junction pads, y = 0
+ *   dirt           dirt road surface, y = 0, no markings
  *   shoulders      grass-edge shoulders, y = -0.03 (below the road, so no z-fighting)
  *   markingsWhite  dashed dividers, solid edges, stop lines, start line, arrows (y = 0.012 / 0.02, polygonOffset)
  *   markingsYellow double centre line
@@ -43,6 +44,8 @@ export interface BlockInstance {
 
 export interface RoadMeshData {
   asphalt: MeshBuffers;
+  /** Dirt roads (SurfaceType 'dirt'). No markings. */
+  dirt: MeshBuffers;
   shoulders: MeshBuffers;
   markingsWhite: MeshBuffers;
   markingsYellow: MeshBuffers;
@@ -109,9 +112,13 @@ class MeshAccumulator {
 
 const UP: Vec3 = { x: 0, y: 1, z: 0 };
 
+/**
+ * A point across the road: `offset` metres to the right of the centreline point, and `y` metres above the centreline's
+ * own height at that point. The centreline carries the road's elevation, so a flat road has y equal to its offset.
+ */
 function at(point: Vec3, heading: number, offset: number, y: number): Vec3 {
   const p = offsetPoint(point, heading, offset);
-  return { x: p.x, y, z: p.z };
+  return { x: p.x, y: point.y + y, z: p.z };
 }
 
 /**
@@ -151,7 +158,8 @@ function crossBar(acc: MeshAccumulator, point: Vec3, heading: number, a: number,
   const forwardDepth = depth / 2;
   const fx = Math.sin(heading);
   const fz = Math.cos(heading);
-  const shift = (p: Vec3, d: number): Vec3 => ({ x: p.x + fx * d, y, z: p.z + fz * d });
+  // The points come from at(), so they already carry the height. Shifting along the road keeps it.
+  const shift = (p: Vec3, d: number): Vec3 => ({ x: p.x + fx * d, y: p.y, z: p.z + fz * d });
   const aLow = shift(at(point, heading, a, y), -forwardDepth);
   const bLow = shift(at(point, heading, b, y), -forwardDepth);
   const bHigh = shift(at(point, heading, b, y), forwardDepth);
@@ -184,24 +192,92 @@ function isRailSegment(segment: RoadSegment): boolean {
 }
 
 /** Which of a segment's ends meets a junction pad, by the explicit connection list. */
-function junctionEndsOf(network: RoadNetwork, segment: RoadSegment): { start: boolean; end: boolean } {
+/**
+ * Per-segment junction connections, computed once per network. Each street end is marked when it meets a junction.
+ * Building this per segment was quadratic in the network size, so chunked builds share one copy.
+ */
+export interface PreparedRoadInput {
+  readonly junctionEnds: ReadonlyMap<string, { start: boolean; end: boolean }>;
+}
+
+export function prepareRoadInput(network: RoadNetwork): PreparedRoadInput {
   const kindOf = new Map(network.segments.map((candidate) => [candidate.id, candidate.kind] as const));
-  let start = false;
-  let end = false;
+  const junctionEnds = new Map<string, { start: boolean; end: boolean }>();
+  for (const segment of network.segments) junctionEnds.set(segment.id, { start: false, end: false });
   for (const connection of network.connections) {
     const ends = [connection.a, connection.b];
-    const mine = ends.find((e) => e.segmentId === segment.id);
-    const other = ends.find((e) => e.segmentId !== segment.id);
-    if (!mine || !other || kindOf.get(other.segmentId) !== 'junction') continue;
-    if (mine.portId === 'start') start = true;
-    if (mine.portId === 'end') end = true;
+    for (const mine of ends) {
+      const other = ends.find((e) => e.segmentId !== mine.segmentId);
+      const record = junctionEnds.get(mine.segmentId);
+      if (!record || !other || kindOf.get(other.segmentId) !== 'junction') continue;
+      if (mine.portId === 'start') record.start = true;
+      if (mine.portId === 'end') record.end = true;
+    }
   }
-  return { start, end };
+  return { junctionEnds };
+}
+
+export interface RoadMeshOptions {
+  /** Build only these segments. Omitted means every segment (the whole-network build). */
+  readonly emitIds?: ReadonlySet<string>;
+  /** Static test blocks to emit. Omitted means the default set. Chunked builds pass the blocks they own. */
+  readonly blocks?: readonly BlockInstance[];
+  /** Precomputed junction ends. Omitted means computed for this call. */
+  readonly prepared?: PreparedRoadInput;
 }
 
 /** Builds all road meshes. Deterministic. Call once per network, never per frame. */
-export function buildRoadMeshData(network: RoadNetwork): RoadMeshData {
+/**
+ * Barriers around a junction pad. Each compass side is either an arm mouth (road width at its centre, left open) or a
+ * closed side (a barrier across the whole edge). A side with an arm gets barriers on the two shoulder strips beside
+ * the mouth, which is where the arm's own guardrails end.
+ */
+function junctionBarriers(
+  rails: MeshAccumulator,
+  segment: RoadSegment,
+  roadHalf: number,
+  boundaryHalf: number,
+  railBase: number,
+  railTop: number,
+): void {
+  const junction = segment.junction;
+  if (!junction) return;
+  const c = junction.centre;
+  const h = junction.halfSizeMeters;
+  const sides: Array<{ port: string; n: Vec3 }> = [
+    { port: 'north', n: { x: 0, y: 0, z: 1 } },
+    { port: 'east', n: { x: 1, y: 0, z: 0 } },
+    { port: 'south', n: { x: 0, y: 0, z: -1 } },
+    { port: 'west', n: { x: -1, y: 0, z: 0 } },
+  ];
+  const span = (side: Vec3, t0: number, t1: number): void => {
+    // Tangent along the edge, to the right of the outward normal.
+    const tg: Vec3 = { x: -side.z, y: 0, z: side.x };
+    // Heights are offsets above the junction's own height.
+    const point = (t: number, y: number): Vec3 => ({
+      x: c.x + side.x * h + tg.x * t,
+      y: c.y + y,
+      z: c.z + side.z * h + tg.z * t,
+    });
+    const inward: Vec3 = { x: -side.x, y: 0, z: -side.z };
+    rails.addQuad(point(t0, railBase), point(t1, railBase), point(t1, railTop), point(t0, railTop), inward);
+  };
+  for (const side of sides) {
+    const hasArm = segment.ports.some((port) => port.id === side.port);
+    if (!hasArm) {
+      span(side.n, -boundaryHalf, boundaryHalf);
+      continue;
+    }
+    span(side.n, roadHalf, boundaryHalf);
+    span(side.n, -boundaryHalf, -roadHalf);
+  }
+}
+
+export function buildRoadMeshData(network: RoadNetwork, options: RoadMeshOptions = {}): RoadMeshData {
+  const emit = options.emitIds;
+  const prepared = options.prepared ?? prepareRoadInput(network);
   const asphalt = new MeshAccumulator();
+  const dirt = new MeshAccumulator();
   const shoulders = new MeshAccumulator();
   const white = new MeshAccumulator();
   const yellow = new MeshAccumulator();
@@ -215,14 +291,19 @@ export function buildRoadMeshData(network: RoadNetwork): RoadMeshData {
   const maxStep = cfg.maxSampleSpacingMeters;
 
   for (const segment of network.segments) {
+    if (emit && !emit.has(segment.id)) continue;
     if (segment.kind === 'junction' && segment.junction) {
       const c = segment.junction.centre;
       const h = segment.junction.halfSizeMeters;
-      const sw: Vec3 = { x: c.x - h, y: 0, z: c.z - h };
-      const se: Vec3 = { x: c.x + h, y: 0, z: c.z - h };
-      const ne: Vec3 = { x: c.x + h, y: 0, z: c.z + h };
-      const nw: Vec3 = { x: c.x - h, y: 0, z: c.z + h };
+      // The pad sits at the junction's own height. A junction is a single flat square.
+      const sw: Vec3 = { x: c.x - h, y: c.y, z: c.z - h };
+      const se: Vec3 = { x: c.x + h, y: c.y, z: c.z - h };
+      const ne: Vec3 = { x: c.x + h, y: c.y, z: c.z + h };
+      const nw: Vec3 = { x: c.x - h, y: c.y, z: c.z + h };
       asphalt.addQuad(sw, se, ne, nw, UP);
+      // Barriers on every pad edge that is not an open road mouth. The boundary is the pad square, so each edge the
+      // car cannot leave through must have a visible barrier. A mouth is the road width at the centre of an arm.
+      junctionBarriers(rails, segment, roadHalf, boundaryHalf, cfg.guardrailBaseMeters, cfg.guardrailHeightMeters);
       continue;
     }
     if (!isRailSegment(segment)) continue;
@@ -231,36 +312,40 @@ export function buildRoadMeshData(network: RoadNetwork): RoadMeshData {
     const L = segment.lengthMeters;
 
     // Asphalt: centre to roadHalf, both sides (one ribbon from -roadHalf to +roadHalf).
-    ribbon(asphalt, segment, 0, L, -roadHalf, roadHalf, 0, maxStep);
+    ribbon(segment.surface === 'dirt' ? dirt : asphalt, segment, 0, L, -roadHalf, roadHalf, 0, maxStep);
     // Shoulders: from the road edge to the boundary, both sides, a little below the road.
     ribbon(shoulders, segment, 0, L, roadHalf, boundaryHalf, cfg.shoulderYMeters, maxStep);
     ribbon(shoulders, segment, 0, L, -boundaryHalf, -roadHalf, cfg.shoulderYMeters, maxStep);
 
+    // Dirt has no paint. Its markings go to scratch buffers that are discarded.
+    const paintWhite = segment.surface === 'dirt' ? new MeshAccumulator() : white;
+    const paintYellow = segment.surface === 'dirt' ? new MeshAccumulator() : yellow;
     const markY = cfg.markingYMeters;
     const lw = cfg.lineWidthMeters;
     // Solid edge lines, inset from the road edge.
     const edge = roadHalf - cfg.edgeLineInsetMeters;
-    ribbon(white, segment, 0, L, edge - lw / 2, edge + lw / 2, markY, maxStep);
-    ribbon(white, segment, 0, L, -edge - lw / 2, -edge + lw / 2, markY, maxStep);
+    ribbon(paintWhite, segment, 0, L, edge - lw / 2, edge + lw / 2, markY, maxStep);
+    ribbon(paintWhite, segment, 0, L, -edge - lw / 2, -edge + lw / 2, markY, maxStep);
     // Dashed lane dividers between lanes of the same direction (at ±laneWidth on a 2-lane-per-way road).
     for (const divider of [laneWidth, -laneWidth]) {
-      dashedRibbon(white, segment, divider - lw / 2, divider + lw / 2, markY, cfg.dashLengthMeters, cfg.dashGapMeters, maxStep);
+      dashedRibbon(paintWhite, segment, divider - lw / 2, divider + lw / 2, markY, cfg.dashLengthMeters, cfg.dashGapMeters, maxStep);
     }
     // Double yellow centre line: two solid lines either side of the centre.
     const c0 = cfg.centerLineOffsetMeters;
-    ribbon(yellow, segment, 0, L, c0 - lw / 2, c0 + lw / 2, markY, maxStep);
-    ribbon(yellow, segment, 0, L, -c0 - lw / 2, -c0 + lw / 2, markY, maxStep);
+    ribbon(paintYellow, segment, 0, L, c0 - lw / 2, c0 + lw / 2, markY, maxStep);
+    ribbon(paintYellow, segment, 0, L, -c0 - lw / 2, -c0 + lw / 2, markY, maxStep);
 
     // Direction arrows on the travel lane (+laneWidth), every arrowSpacing metres.
     for (let s = cfg.arrowFirstOffsetMeters; s < L - 3; s += cfg.arrowSpacingMeters) {
       const pose = sampleAtDistance(line, s);
       const f = { x: Math.sin(pose.heading), y: 0, z: Math.cos(pose.heading) };
       const centre = at(pose.point, pose.heading, laneWidth, cfg.arrowYMeters);
-      const tip: Vec3 = { x: centre.x + f.x * 1.6, y: cfg.arrowYMeters, z: centre.z + f.z * 1.6 };
-      const back = { x: centre.x - f.x * 1.2, y: cfg.arrowYMeters, z: centre.z - f.z * 1.2 };
+      // tip and back are on the road's centreline height. at() adds the arrow height to `back`, so it carries the height.
+      const tip: Vec3 = { x: centre.x + f.x * 1.6, y: centre.y, z: centre.z + f.z * 1.6 };
+      const back = { x: centre.x - f.x * 1.2, y: pose.point.y, z: centre.z - f.z * 1.2 };
       const left = at(back, pose.heading, -0.7, cfg.arrowYMeters);
       const right = at(back, pose.heading, 0.7, cfg.arrowYMeters);
-      white.addTriangle(left, right, tip, UP);
+      paintWhite.addTriangle(left, right, tip, UP);
     }
 
     // Guardrails on both outer edges (boundary), plus a cap at any terminal port.
@@ -302,7 +387,7 @@ export function buildRoadMeshData(network: RoadNetwork): RoadMeshData {
 
     // Stop lines on the inbound lanes, 1.5 m before the pad. Arms that end at the pad carry inbound traffic on the
     // positive (right) side. Arms that start at the pad carry it on the negative side. Lane directions never conflict.
-    const junctionEnds = junctionEndsOf(network, segment);
+    const junctionEnds = prepared.junctionEnds.get(segment.id) ?? { start: false, end: false };
     const stopDistance = cfg.stopLineDistanceMeters;
     const stopDepth = cfg.stopLineWidthMeters;
     if (junctionEnds.end) {
@@ -321,24 +406,25 @@ export function buildRoadMeshData(network: RoadNetwork): RoadMeshData {
       const pose = sampleAtDistance(line, s);
       for (const side of [1, -1]) {
         const p = offsetPoint(pose.point, pose.heading, side * boundaryHalf);
-        posts.push({ position: { x: p.x, y: 0, z: p.z }, headingRadians: pose.heading });
+        posts.push({ position: { x: p.x, y: p.y, z: p.z }, headingRadians: pose.heading });
       }
     }
   }
 
   // Start line across every lane, at the circuit start (z = 0). Its heading is S1's heading.
   const start = network.segments.find((segment) => segment.id === 'S1');
-  if (start?.centerline) {
+  if (start?.centerline && (!emit || emit.has('S1'))) {
     crossBar(white, start.ports[0]?.position ?? { x: 0, y: 0, z: 0 }, start.centerline.headings[0] ?? 0, -roadHalf, roadHalf, cfg.markingYMeters, 0.6, UP);
   }
 
   return {
     asphalt: asphalt.build(),
+    dirt: dirt.build(),
     shoulders: shoulders.build(),
     markingsWhite: white.build(),
     markingsYellow: yellow.build(),
     guardrails: rails.build(),
     posts,
-    blocks: ROAD_TEST_BLOCKS,
+    blocks: options.blocks ? [...options.blocks] : ROAD_TEST_BLOCKS,
   };
 }

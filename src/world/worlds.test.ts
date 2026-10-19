@@ -1,41 +1,37 @@
 import { describe, expect, it } from 'vitest';
+import { CITY_SPAWN } from './city/cityLayout';
 import { getWorldDefinition, parseWorldId } from './worlds';
-import { VEHICLE_SPAWN, VEHICLE_SPAWN_YAW_RADIANS } from '../config/simulationConfig';
-import { validateRoadNetwork } from './roadValidation';
 
-describe('parseWorldId', () => {
-  it('defaults to the test circuit', () => {
-    expect(parseWorldId('')).toBe('circuit');
+/*
+ * World registry (Part 5). The city is the default. The circuit and the legacy road stay reachable as regressions.
+ */
+
+describe('world registry', () => {
+  it('defaults to the city, and keeps the circuit and legacy worlds reachable', () => {
+    expect(parseWorldId('')).toBe('loop');
+    expect(parseWorldId('?traffic=off')).toBe('loop');
+    expect(parseWorldId('?world=city')).toBe('city');
     expect(parseWorldId('?world=circuit')).toBe('circuit');
-    expect(parseWorldId('?world=anything')).toBe('circuit');
-  });
-
-  it('selects the legacy straight road with ?world=legacy', () => {
     expect(parseWorldId('?world=legacy')).toBe('legacy');
-  });
-});
-
-describe('getWorldDefinition', () => {
-  it('builds the circuit with a validated network, a boundary, and the network spawn', () => {
-    const world = getWorldDefinition('circuit');
-    expect(world.network).not.toBeNull();
-    expect(world.boundary).not.toBeNull();
-    expect(world.bounds).not.toBeNull();
-    expect(validateRoadNetwork(world.network ?? { id: '', name: '', segments: [], connections: [], spawn: { position: { x: 0, y: 0, z: 0 }, yawRadians: 0 } }).valid).toBe(true);
-    expect(world.spawn.position.x).toBeCloseTo(1.8, 9);
-    expect(world.spawn.position.z).toBeCloseTo(6, 9);
+    expect(parseWorldId('?world=loop')).toBe('loop');
+    expect(parseWorldId('?world=unknown')).toBe('loop');
   });
 
-  it('keeps the legacy road as a reference: no network, no boundary, the original spawn', () => {
-    const world = getWorldDefinition('legacy');
-    expect(world.network).toBeNull();
-    expect(world.boundary).toBeNull();
-    expect(world.bounds).toBeNull();
-    expect(world.spawn.position).toEqual(VEHICLE_SPAWN);
-    expect(world.spawn.yawRadians).toBe(VEHICLE_SPAWN_YAW_RADIANS);
+  it('builds the city with its spawn, traffic scenario, and scenery', () => {
+    const city = getWorldDefinition('city');
+    expect(city.network?.id).toBe('city');
+    expect(city.spawn.position).toEqual(CITY_SPAWN.position);
+    expect(city.city).not.toBeNull();
+    expect(city.opponents).toEqual([]);
+    expect(city.trafficScenario.length).toBeGreaterThan(0);
+    for (const request of city.trafficScenario) {
+      expect(city.lanes?.byId.has(request.laneId), request.laneId).toBe(true);
+    }
   });
 
-  it('returns the same cached instance for the same id', () => {
-    expect(getWorldDefinition('circuit')).toBe(getWorldDefinition('circuit'));
+  it('keeps the circuit world unchanged: no city extras', () => {
+    const circuit = getWorldDefinition('circuit');
+    expect(circuit.city).toBeNull();
+    expect(circuit.network?.segments).toHaveLength(12);
   });
 });

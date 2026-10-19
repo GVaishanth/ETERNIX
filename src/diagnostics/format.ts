@@ -25,9 +25,42 @@ function flag(value: boolean): string {
   return value ? 'yes' : 'no';
 }
 
+/** Traffic and opponent rows. Empty when the world has no traffic. Per-vehicle rows are bounded by the pool size. */
+function trafficSection(snapshot: DiagnosticsSnapshot): DebugSection | null {
+  const traffic = snapshot.traffic;
+  if (!traffic || !traffic.enabled) return null;
+  const rejections = Object.entries(traffic.rejections)
+    .map(([reason, count]) => `${reason} ${count}`)
+    .join(', ');
+  const contacts = traffic.contacts
+    ? Object.entries(traffic.contacts)
+        .filter(([, count]) => count > 0)
+        .map(([kind, count]) => `${kind} ${count}`)
+        .join(', ') || 'none'
+    : 'n/a';
+  const rows: DebugRow[] = [
+    { label: 'traffic active / pool', value: `${traffic.activeTraffic} / ${traffic.capacity}` },
+    { label: 'opponents / recycles', value: `${traffic.opponentCount} / ${traffic.opponentRecycles}` },
+    { label: 'spawned / recycled / stalled', value: traffic.stats ? `${traffic.stats.spawned} / ${traffic.stats.recycled} / ${traffic.stats.stallRecycled}` : 'n/a' },
+    { label: 'spawn rejections', value: rejections || 'none' },
+    { label: 'contacts (events)', value: contacts },
+  ];
+  for (const vehicle of traffic.vehicles) {
+    const gap = vehicle.followingGapMeters === null ? '-' : `${fixed(vehicle.followingGapMeters, 1)} m`;
+    const ai = vehicle.aiState ? ` ai=${vehicle.aiState}` : '';
+    rows.push({
+      label: `${vehicle.kind === 'opponent' ? 'opp' : 'traffic'} #${vehicle.id}`,
+      value: `${vehicle.typeId ?? '?'} seg ${vehicle.segmentId ?? '-'} lane ${vehicle.laneId ?? '-'} ${fixed(vehicle.speedMps, 1)}/${fixed(vehicle.targetSpeedMps, 1)} m/s gap ${gap}${ai}`,
+    });
+  }
+  return { title: 'Traffic and AI (DEV)', rows };
+}
+
 export function formatSnapshot(snapshot: DiagnosticsSnapshot): DebugSection[] {
   const { renderer, camera, vehicle, body, input, control, physics, assets, visibility, road } = snapshot;
+  const traffic = trafficSection(snapshot);
   return [
+    ...(traffic ? [traffic] : []),
     {
       title: 'Road network',
       rows: [
@@ -35,6 +68,7 @@ export function formatSnapshot(snapshot: DiagnosticsSnapshot): DebugSection[] {
         { label: 'segments / connections', value: `${road.segmentCount} / ${road.connectionCount}` },
         { label: 'connection check', value: road.validationValid ? 'valid' : `${road.validationIssueCount} issue(s), see overlay (G)` },
         { label: 'current segment', value: road.currentSegmentId ?? 'none' },
+        { label: 'recoveries', value: `${road.recoveryCount}${road.lastRecovery ? ` (last: ${road.lastRecovery})` : ''}` },
         { label: 'boundary contact', value: flag(road.contact) },
         { label: 'contact steps', value: String(road.contactSteps) },
         { label: 'camera mode', value: road.cameraMode },

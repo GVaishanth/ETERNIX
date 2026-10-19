@@ -15,7 +15,7 @@ Checks, in order:
 
 Usage:
   python3 tools/browser-road.py [url] [outdir]
-Defaults: url=http://localhost:5173/  outdir=/home/user/verification/part3
+Defaults: url=http://localhost:5173/play.html?world=circuit  outdir=browser-output/part3
 Writes screenshots and report.json to outdir.
 """
 
@@ -27,8 +27,8 @@ import time
 
 from playwright.sync_api import sync_playwright
 
-URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5173/"
-OUT = sys.argv[2] if len(sys.argv) > 2 else "/home/user/verification/part3"
+URL = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:5173/play.html?world=circuit"
+OUT = sys.argv[2] if len(sys.argv) > 2 else "browser-output/part3"
 os.makedirs(OUT, exist_ok=True)
 
 FIXED_DT = 1.0 / 60.0
@@ -367,13 +367,18 @@ def main():
         # reset
         reset(page)
         s = snap(page)
+        trail = []
+        for _ in range(3):
+            trail.append(f"x={s['vehicle']['positionSim']['x']:.2f} z={s['vehicle']['positionSim']['z']:.2f} v={s['vehicle']['speedMps']:.2f} yaw={s['vehicle']['yawDegrees']:.1f} contact={s['road']['contact']} pk={s['input']['pressedKeys']} traffic={(s['traffic'] or {}).get('activeTraffic')} contacts={(s['traffic'] or {}).get('contacts')}")
+            page.wait_for_timeout(100)
+            s = snap(page)
         ok = (
             abs(s["vehicle"]["positionSim"]["x"] - SPAWN[0]) < 1e-3
             and abs(s["vehicle"]["positionSim"]["z"] - SPAWN[2]) < 1e-3
             and abs(s["vehicle"]["yawDegrees"]) < 1e-3
             and abs(s["vehicle"]["speedMps"]) < 1e-6
         )
-        check("reset: R returns to the exact spawn pose and zero speed", ok, f"{s['vehicle']['positionSim']}")
+        check("reset: R returns to the exact spawn pose and zero speed", ok, f"{s['vehicle']['positionSim']} v={s['vehicle']['speedMps']:.3f} trail={trail}")
 
         # lap: the lap runs at a smaller viewport because keyboard steering needs a higher control rate than the
         # headless renderer gives at 1280x760 (about 12 fps). 800x475 gives about 20 fps.
@@ -412,7 +417,9 @@ def main():
     with open(os.path.join(OUT, "report.json"), "w") as f:
         json.dump(report, f, indent=2, default=list)
     print(f"\n{report['passed']}/{report['total']} checks passed", flush=True)
+    # Exit status reflects the checks: 0 only when every check passed (Part 11).
+    return 0 if report["passed"] == report["total"] else 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

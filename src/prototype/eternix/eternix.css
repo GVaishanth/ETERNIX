@@ -1,0 +1,832 @@
+/*
+ * ETERNIX prototype styles. Scoped to the .ex- prefix. Loaded only by the front page (index.html), so the game's pages are
+ * unchanged. No webfonts and no external resources: the type uses the system stack, and the wordmark is an inline SVG.
+ * Motion is CSS only, and it stops under reduced motion.
+ */
+
+.ex-root
+{
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #06080c;
+  color: #eef1f5;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.ex-stage,
+.ex-showroom
+{
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  animation: ex-fade 900ms ease both;
+}
+
+/* The game, behind the front page or the loading page. It sits at the bottom of the stack. */
+.ex-game-layer
+{
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #06080c;
+}
+
+.ex-stage canvas
+{
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ex-stage-fallback
+{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  color: #8b95a5;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* Darkening only where the text sits: the bottom edge, and a soft left edge. The car stays in the lit part of the frame. */
+.ex-shade
+{
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    linear-gradient(to top, rgba(6, 8, 12, 0.94) 0%, rgba(6, 8, 12, 0.5) 22%, rgba(6, 8, 12, 0) 44%),
+    linear-gradient(to bottom, rgba(6, 8, 12, 0.78) 0%, rgba(6, 8, 12, 0.3) 14%, rgba(6, 8, 12, 0) 30%),
+    linear-gradient(to right, rgba(6, 8, 12, 0.72) 0%, rgba(6, 8, 12, 0) 40%);
+}
+
+/* The wordmark sits centred in the upper third, as in the reference. */
+.ex-brand
+{
+  position: absolute;
+  z-index: 2;
+  top: 13vh;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.ex-wordmark
+{
+  display: block;
+  width: min(380px, 60vw);
+  height: auto;
+  color: #f2f4f7;
+}
+
+.ex-build
+{
+  margin: 18px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: #7d8799;
+}
+
+/* The entry block: the primary action, then the secondary one, bottom left, as in the reference. */
+.ex-entry
+{
+  position: absolute;
+  z-index: 4;
+  left: 56px;
+  bottom: 64px;
+  width: 360px;
+}
+
+.ex-btn
+{
+  display: block;
+  width: 100%;
+  height: 52px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease, opacity 180ms ease, transform 120ms ease;
+}
+
+.ex-btn:active:not(:disabled)
+{
+  transform: translateY(1px);
+}
+
+.ex-btn-primary
+{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #eef1f5;
+  color: #07090d;
+}
+
+.ex-btn-primary .ex-arrow
+{
+  font-size: 16px;
+  letter-spacing: 0;
+  transition: transform 180ms ease;
+}
+
+.ex-btn-primary:hover:not(:disabled) .ex-arrow
+{
+  transform: translateX(4px);
+}
+
+.ex-btn-primary:hover:not(:disabled)
+{
+  background: #ffffff;
+}
+
+.ex-btn-primary:active:not(:disabled)
+{
+  background: #d7dde5;
+}
+
+.ex-btn-primary:disabled
+{
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ex-btn-outline
+{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 48px;
+  margin-top: 12px;
+  border: 1px solid rgba(238, 241, 245, 0.32);
+  background: rgba(6, 8, 12, 0.35);
+  color: #eef1f5;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+}
+
+.ex-btn-outline:hover
+{
+  border-color: rgba(238, 241, 245, 0.7);
+  background: rgba(6, 8, 12, 0.6);
+}
+
+.ex-btn-outline[aria-pressed='true']
+{
+  border-color: #d9482f;
+}
+
+.ex-btn-inline
+{
+  display: inline-block;
+  width: auto;
+  height: 42px;
+  padding: 0 22px;
+}
+
+.ex-btn-quiet
+{
+  background: none;
+  border: 0;
+  padding: 0;
+  height: 32px;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  color: #8b95a5;
+  cursor: pointer;
+  transition: color 180ms ease;
+}
+
+.ex-btn-quiet:hover
+{
+  color: #ffffff;
+}
+
+/* Garage text: the car, its class and paint, and three figures from the game's data. Left column, over the shade. */
+.ex-garage-info
+{
+  position: absolute;
+  z-index: 3;
+  left: 56px;
+  top: 34vh;
+  width: 340px;
+  animation: ex-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.ex-garage-name
+{
+  margin: 14px 0 6px;
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: #f2f4f7;
+}
+
+.ex-garage-class
+{
+  margin: 0 0 22px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #aeb7c4;
+}
+
+.ex-garage-specs
+{
+  margin: 0;
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(238, 241, 245, 0.16);
+}
+
+.ex-garage-spec
+{
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.ex-garage-spec dt
+{
+  color: #6f7a8b;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ex-garage-spec dd
+{
+  margin: 0;
+  color: #eef1f5;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-garage-note
+{
+  margin: 16px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #6f7a8b;
+}
+
+.ex-views
+{
+  position: absolute;
+  z-index: 3;
+  left: 56px;
+  bottom: 196px;
+  display: flex;
+  gap: 22px;
+  animation: ex-fade 700ms ease 300ms both;
+}
+
+.ex-view
+{
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: #7d8799;
+  cursor: pointer;
+  border-bottom: 1px solid transparent;
+  transition: color 180ms ease, border-color 180ms ease;
+}
+
+.ex-view:hover,
+.ex-view[aria-pressed='true']
+{
+  color: #ffffff;
+  border-bottom-color: #d9482f;
+}
+
+.ex-meta
+{
+  position: absolute;
+  z-index: 3;
+  right: 56px;
+  bottom: 64px;
+  text-align: right;
+}
+
+.ex-status
+{
+  margin: 0 0 14px;
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: end;
+  gap: 5px 20px;
+  font-size: 13px;
+}
+
+.ex-status-row
+{
+  display: contents;
+}
+
+.ex-status dt
+{
+  color: #6f7a8b;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  align-self: center;
+}
+
+.ex-status dd
+{
+  margin: 0;
+  color: #dfe5ec;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-info
+{
+  position: relative;
+  /* Above the status block, which is drawn later in the DOM. */
+  z-index: 5;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ex-info-button
+{
+  padding: 7px 12px;
+  border: 1px solid rgba(238, 241, 245, 0.22);
+  border-radius: 0;
+  background: transparent;
+  color: #aeb7c4;
+  font: 600 11px/1 system-ui, sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.ex-info-button:hover
+{
+  border-color: rgba(238, 241, 245, 0.5);
+  color: #eef1f5;
+}
+
+.ex-info-button:focus-visible
+{
+  outline: 2px solid #eef1f5;
+  outline-offset: 3px;
+}
+
+.ex-info-panel
+{
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 10px);
+  width: 440px;
+  max-width: calc(100vw - 48px);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+  padding: 14px 16px;
+  border: 1px solid rgba(238, 241, 245, 0.14);
+  background: #080b10;
+  color: #c9d1dc;
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  text-align: left;
+}
+
+.ex-info-title
+{
+  margin: 0 0 4px;
+  color: #eef1f5;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.ex-info-rows
+{
+  margin: 0;
+}
+
+.ex-info-row
+{
+  display: flex;
+  gap: 12px;
+}
+
+.ex-info-row dt
+{
+  min-width: 64px;
+  color: #eef1f5;
+  font-weight: 600;
+}
+
+.ex-info-row dd
+{
+  margin: 0;
+}
+
+.ex-kicker
+{
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: #aeb7c4;
+}
+
+.ex-loader-text
+{
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #ffb1a6;
+}
+
+.ex-count
+{
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: #aeb7c4;
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-loader-actions
+{
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-top: 6px;
+}
+
+.ex-link
+{
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: #c3ccd8;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.ex-link:hover
+{
+  color: #ffffff;
+}
+
+/* The landing fades in once, the type rises once, and the page fades to dark before the game opens. */
+.ex-entry,
+.ex-meta
+{
+  animation: ex-rise 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.ex-entry
+{
+  animation-delay: 260ms;
+}
+
+.ex-meta
+{
+  animation-delay: 380ms;
+}
+
+@keyframes ex-rise
+{
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ex-fade
+{
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ex-clear
+{
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+:focus-visible
+{
+  outline: 2px solid #eef1f5;
+  outline-offset: 4px;
+}
+
+/* Reduced motion: no entrance, no fades, no transitions. The loader still shows real progress, without motion. */
+.ex-reduced *,
+.ex-reduced *::before,
+.ex-reduced *::after
+{
+  animation: none !important;
+  transition: none !important;
+}
+
+@media (max-width: 720px)
+{
+  .ex-brand {
+    top: 14vh;
+  }
+
+  .ex-wordmark {
+    width: min(280px, 70vw);
+  }
+
+  .ex-entry {
+    left: 20px;
+    right: 20px;
+    bottom: 28px;
+    width: auto;
+  }
+
+
+
+  .ex-meta {
+    left: 20px;
+    right: 20px;
+    bottom: 160px;
+    text-align: left;
+  }
+
+  .ex-status {
+    justify-content: start;
+    grid-template-columns: auto 1fr;
+    font-size: 12px;
+  }
+
+  .ex-info {
+    display: none;
+  }
+
+  /* On a phone the garage text takes the lower frame, so the status block steps aside. */
+  .ex-garage-view .ex-meta {
+    visibility: hidden;
+  }
+
+  .ex-garage-info {
+    left: 20px;
+    right: 20px;
+    top: auto;
+    bottom: 236px;
+    width: auto;
+  }
+
+  .ex-garage-name {
+    font-size: 30px;
+  }
+
+  .ex-views {
+    left: 20px;
+    bottom: 190px;
+    gap: 16px;
+  }
+}
+
+/* ---- Handoff: the loading page (veil), its bars and ticks, and the layers under it. ----
+   The veil is translucent, so the game shows behind it. Its bars run for the loading time (--ex-load-s, set from the
+   config) and complete when their real step does. Layers: the game sits at the back; the front page stage sits over it
+   and is hidden while the veil is up; a hidden layer takes no visibility and no pointer input. */
+
+.ex-game-slot {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.ex-game-slot.ex-hidden,
+.ex-stage.ex-hidden {
+  visibility: hidden;
+}
+
+/* The game is mounted but not interactive until it is shown on its own. Keyboard input is not blocked here. */
+.ex-game-idle {
+  pointer-events: none;
+}
+
+.ex-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 24px;
+  background: rgba(6, 8, 12, 0.58);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: ex-fade 240ms ease both;
+}
+
+.ex-veil-out {
+  animation: ex-clear var(--ex-fade-ms, 450ms) ease both;
+  pointer-events: none;
+}
+
+.ex-veil-panel {
+  display: grid;
+  gap: 12px;
+  width: min(480px, 100%);
+  box-sizing: border-box;
+  padding: 24px 26px;
+  justify-items: center;
+  text-align: center;
+  background: rgba(6, 8, 12, 0.5);
+  border: 1px solid rgba(238, 241, 245, 0.12);
+  border-radius: 4px;
+}
+
+.ex-bars {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ex-bar-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+}
+
+.ex-bar-label {
+  font-size: 13px;
+  color: #aeb7c4;
+  transition: color 240ms ease;
+}
+
+.ex-row-done .ex-bar-label {
+  color: #eef1f5;
+}
+
+.ex-row-failed .ex-bar-label {
+  color: #ffb1a6;
+}
+
+.ex-track {
+  position: relative;
+  display: block;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(238, 241, 245, 0.18);
+}
+
+.ex-fill {
+  position: absolute;
+  inset: 0;
+  background: #f2f4f7;
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+/* The active bar runs for its own random time (--ex-bar-ms), then waits for its real step. The way back uses the
+   loading time (--ex-load-s) for every pending bar. */
+.ex-fill-run {
+  animation: ex-fill-to var(--ex-bar-ms, var(--ex-load-s, 3s)) cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+
+/* The step is done: the bar completes. */
+.ex-fill-done {
+  animation: ex-fill-finish 240ms ease both;
+}
+
+.ex-tick {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.ex-tick circle {
+  fill: none;
+  stroke: rgba(238, 241, 245, 0.35);
+  stroke-width: 1;
+}
+
+.ex-tick path {
+  fill: none;
+  stroke: #f2f4f7;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 12;
+  stroke-dashoffset: 12;
+}
+
+/* The tick draws itself once its step is done. */
+.ex-tick-done path {
+  animation: ex-tick-draw 320ms ease 80ms both;
+}
+
+.ex-tick-failed {
+  color: #ffb1a6;
+  font-size: 16px;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* The landing's controls and status fade as the camera leaves for the back view. */
+.ex-moving .ex-entry,
+.ex-moving-out {
+  animation: ex-clear 400ms ease both;
+}
+
+@keyframes ex-fill-to {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(0.9);
+  }
+}
+
+@keyframes ex-fill-finish {
+  from {
+    transform: scaleX(0.9);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes ex-tick-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Reduced motion: no animation (the global rule above). The bars and ticks show their state at once, and the
+   veil cuts out. The timing does not change. */
+.ex-reduced .ex-fill-run {
+  transform: scaleX(0.9);
+}
+
+.ex-reduced .ex-fill-done {
+  transform: scaleX(1);
+}
+
+.ex-reduced .ex-tick-done path {
+  stroke-dashoffset: 0;
+}
+
+.ex-reduced .ex-veil-out {
+  opacity: 0;
+}
+
+@media (max-width: 720px) {
+  .ex-veil {
+    padding: 20px;
+  }
+
+  .ex-veil-panel {
+    width: 100%;
+    padding: 20px;
+  }
+
+  .ex-bar-row {
+    grid-template-columns: 116px minmax(0, 1fr) 18px;
+    gap: 10px;
+  }
+
+  .ex-bar-label {
+    font-size: 12px;
+  }
+}

@@ -1,8 +1,10 @@
+import type { StreamerStats } from '../world/streaming/streamer';
 import type { ChaseCameraState } from '../camera/chaseCamera';
 import { forwardFromYaw, toRenderSpace } from '../core/coordinates';
 import { metersPerSecondToKph, metersPerSecondToMph, RAD_TO_DEG } from '../core/units';
 import type { BodyState, InputState, Vec3, VehicleState } from '../core/types';
 import { getDriveDirection, slipAngleRadians, type DriveDirection } from '../simulation/vehicle';
+import type { TrafficDiagnostics } from './trafficDiagnostics';
 
 /** A plain, serializable view of the simulation and renderer state for the debug panel. */
 
@@ -11,6 +13,9 @@ export interface RendererStatus {
   backend: 'WebGL2' | 'WebGL1' | 'unknown';
   drawCallsLastFrame: number;
   triangles: number;
+  /** Live GPU buffer geometries and textures held by the renderer. Stable over repeated loops when disposal works. */
+  geometries: number;
+  textures: number;
 }
 
 export interface DiagnosticsSnapshot {
@@ -72,6 +77,10 @@ export interface DiagnosticsSnapshot {
     roadInFrustum: boolean;
   };
   road: RoadDiagnostics;
+  /** Traffic and opponent state. Null when the world has no traffic. */
+  traffic: TrafficDiagnostics | null;
+  /** World streaming state. Null in worlds that are not streamed. */
+  streaming: StreamerStats | null;
 }
 
 /** Road network state for the debug panel. Read-only. */
@@ -87,6 +96,9 @@ export interface RoadDiagnostics {
   contactSteps: number;
   cameraMode: 'chase' | 'overview';
   roadDebugVisible: boolean;
+  /** Recoveries since start (world bounds, off-road, or stuck). Zero during ordinary driving. */
+  recoveryCount: number;
+  lastRecovery: string | null;
 }
 
 export interface SnapshotInput {
@@ -107,6 +119,8 @@ export interface SnapshotInput {
   vehicleInFrustum: boolean;
   roadInFrustum: boolean;
   road: RoadDiagnostics;
+  traffic: TrafficDiagnostics | null;
+  streaming: StreamerStats | null;
 }
 
 /** Signed difference a - b in degrees, on the shortest arc, in (-180, 180]. */
@@ -173,5 +187,7 @@ export function buildDiagnosticsSnapshot(input: SnapshotInput): DiagnosticsSnaps
       roadInFrustum: input.roadInFrustum,
     },
     road: input.road,
+    traffic: input.traffic,
+    streaming: input.streaming,
   };
 }

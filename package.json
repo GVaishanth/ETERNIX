@@ -1,9 +1,9 @@
 {
-  "name": "street-racer",
+  "name": "eternix",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Browser 3D open-world street racer (Need for Speed: Most Wanted 2005 inspired). Phase 0: foundation.",
+  "description": "ETERNIX: a free browser 3D open-world street racer. Drive a looping city, race rivals, and outrun the police. Runs in the browser with no server.",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
@@ -34,5 +34,16 @@
     "typescript-eslint": "8.71.2",
     "vite": "8.3.4",
     "vitest": "4.1.11"
-  }
+  },
+  "license": "MIT",
+  "keywords": [
+    "racing",
+    "driving",
+    "browser",
+    "webgl",
+    "three.js",
+    "react-three-fiber",
+    "game"
+  ],
+  "author": "ETERNIX contributors"
 }

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ETERNIX</title>
+    <meta name="description" content="ETERNIX is a browser 3D open-world street racer. Drive, race, and evade the police." />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://gvaishanth.github.io/ETERNIX/play.html" />
+    <meta name="theme-color" content="#07090d" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ETERNIX" />
+    <meta property="og:title" content="ETERNIX" />
+    <meta property="og:description" content="ETERNIX is a browser 3D open-world street racer. Drive, race, and evade the police." />
+    <meta property="og:url" content="https://gvaishanth.github.io/ETERNIX/play.html" />
+    <meta property="og:image" content="https://gvaishanth.github.io/ETERNIX/social-preview.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta property="og:image:alt" content="ETERNIX: a browser 3D open-world street racer" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="./favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./site.webmanifest" />
+    <style>
+      /* Loading screen. Shown until the game's JavaScript has started, then React replaces it. Plain CSS, no network. */
+      html, body { margin: 0; height: 100%; background: #0b0f16; color: #d7e2ee; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+      #root { height: 100%; }
+      .loader { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+      .loader h1 { font-size: 20px; font-weight: 600; letter-spacing: 0.04em; margin: 0; }
+      .loader p { margin: 0; font-size: 14px; color: #8fa3b8; max-width: 440px; text-align: center; line-height: 1.5; }
+      .spinner { width: 46px; height: 46px; border-radius: 50%; border: 4px solid #1d2a3a; border-top-color: #f5b93a; animation: spin 0.9s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .loader a { color: #f5b93a; }
+      @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="loader" role="status" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <h1>ETERNIX</h1>
+        <p id="loader-text">Loading the streets…</p>
+        <noscript>
+          <p>ETERNIX needs JavaScript and WebGL. Turn on JavaScript, then reload this page.</p>
+        </noscript>
+      </div>
+    </div>
+    <script>
+      // If the game does not start in time, say so instead of showing a spinner forever. This does not touch the game.
+      (function () {
+        var text = document.getElementById('loader-text');
+        var slow = setTimeout(function () {
+          if (text && document.querySelector('.loader')) {
+            text.textContent = 'This is taking longer than usual. The game needs WebGL and a current browser. Check that hardware acceleration is on, then reload.';
+          }
+        }, 20000);
+        window.addEventListener('error', function () {
+          if (text && document.querySelector('.loader')) {
+            text.textContent = 'The game could not load. Check your connection, then reload this page.';
+          }
+          clearTimeout(slow);
+        });
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

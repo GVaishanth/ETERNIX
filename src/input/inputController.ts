@@ -30,22 +30,31 @@ export function isFormControlTarget(target: EventTarget | null): boolean {
   return element.isContentEditable === true;
 }
 
+export interface InputAttachOptions {
+  /** Called when the page visibility changes. True means the tab is hidden. */
+  readonly onVisibilityChange?: (hidden: boolean) => void;
+}
+
 export class InputController {
   private readonly heldCodes = new Set<string>();
   private queuedActions: GameAction[] = [];
 
   /**
    * Attaches listeners to the window (and, if provided, the document for visibility changes).
+   * This is the app's only window and document listener set. `onVisibilityChange` receives the page visibility, so
+   * other systems (the audio) can react without adding a second listener.
    * Returns a function that removes every listener and clears all state.
    */
-  attach(view: EventTarget, doc?: EventTarget): () => void {
+  attach(view: EventTarget, doc?: EventTarget, options: InputAttachOptions = {}): () => void {
     const onKeyDown = (event: Event): void => this.handleKeyDown(event as KeyboardEvent);
     const onKeyUp = (event: Event): void => {
       this.heldCodes.delete((event as KeyboardEvent).code);
     };
     const onBlur = (): void => this.heldCodes.clear();
     const onVisibilityChange = (): void => {
-      if ((doc as Document | undefined)?.hidden) this.heldCodes.clear();
+      const hidden = (doc as Document | undefined)?.hidden === true;
+      if (hidden) this.heldCodes.clear();
+      options.onVisibilityChange?.(hidden);
     };
 
     view.addEventListener('keydown', onKeyDown);
@@ -92,7 +101,7 @@ export class InputController {
     if (shouldPreventDefault(code)) event.preventDefault();
     if (isHeldGameKeyCode(code)) this.heldCodes.add(code);
 
-    const action = actionForKeyCode(code);
+    const action = actionForKeyCode(code, event.shiftKey);
     if (action && !event.repeat) this.queueAction(action);
   }
 }

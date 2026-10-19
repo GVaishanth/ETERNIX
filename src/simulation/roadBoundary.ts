@@ -3,6 +3,8 @@ import { TWO_PI } from '../core/math';
 import type { VehicleState } from '../core/types';
 import type { VehicleConfig } from '../config/vehicleConfig';
 import type { RoadNetwork, RoadSegment } from '../world/roadTypes';
+import { WORLD_STREAMING_CONFIG } from '../config/worldStreamingConfig';
+import { wrapToBase } from '../world/wrap/worldWrap';
 
 /*
  * Arcade road boundary (Part 3). Custom code, no physics engine.
@@ -75,6 +77,38 @@ export interface RoadBoundary {
   maxX: number;
   minZ: number;
   maxZ: number;
+  /** Bucket grid over the shapes' bounding boxes. Null when there are no shapes. Queries give the same answer without it. */
+  grid: BoundaryGrid | null;
+  /**
+   * Period of a looping world, in metres, or null for a finite world. When set, `signedDistance` and `normalAt` treat the
+   * shapes as a torus: a query also sees the shapes one period away, so the boundary is continuous across the seams.
+   */
+  periodMeters: number | null;
+  /** Segments whose surface is dirt. A car on one of them is stepped with the dirt penalty (surfaceModel.ts). */
+  dirtSegments?: ReadonlySet<string>;
+}
+
+/**
+ * Only shapes within this distance of a seam are tested at the far image. A shape farther than this from a query is
+ * never nearer than the best distance found by the base scan, so the torus result is exact for every point within
+ * REACH of a road. Farther than that the distance is an upper bound. The boundary test only needs the sign there.
+ */
+const TORUS_REACH_METERS = 400;
+const TORUS_OFFSETS = [-1, 0, 1] as const;
+
+/**
+ * Uniform bucket grid. buckets[row * cols + col] lists, in ascending order, the indices of every shape whose bounding box
+ * touches that cell. `stamp` and `generation` de-duplicate shapes across cells within one query without allocating.
+ */
+export interface BoundaryGrid {
+  readonly cellMeters: number;
+  readonly originX: number;
+  readonly originZ: number;
+  readonly cols: number;
+  readonly rows: number;
+  readonly buckets: readonly (readonly number[])[];
+  readonly stamp: Uint32Array;
+  generation: number;
 }
 
 export interface SignedDistanceResult {
@@ -200,7 +234,16 @@ export function buildRoadBoundary(network: RoadNetwork): RoadBoundary {
     minZ = Math.min(minZ, shape.minZ);
     maxZ = Math.max(maxZ, shape.maxZ);
   }
-  return { shapes, minX, maxX, minZ, maxZ };
+  return {
+    shapes,
+    minX,
+    maxX,
+    minZ,
+    maxZ,
+    grid: buildBoundaryGrid(shapes, WORLD_STREAMING_CONFIG.boundaryIndexCellMeters),
+    periodMeters: network.periodMeters ?? null,
+    dirtSegments: new Set(network.segments.filter((segment) => segment.surface === 'dirt').map((segment) => segment.id)),
+  };
 }
 
 function arcShapeFromSegment(segment: RoadSegment, cx: number, cz: number, radius: number, turnRadians: number, halfWidth: number): ArcShape {
@@ -250,7 +293,8 @@ function arcShapeFromSegment(segment: RoadSegment, cx: number, cz: number, radiu
 }
 
 /** Signed distance to the drivable region, and the id of the nearest segment. Negative inside. */
-export function signedDistance(boundary: RoadBoundary, x: number, z: number): SignedDistanceResult {
+/** Reference implementation: scans every shape. Kept for tests and as the fallback outside the grid. */
+export function signedDistanceReference(boundary: RoadBoundary, x: number, z: number): SignedDistanceResult {
   let best = Infinity;
   let bestId: string | null = null;
   for (const shape of boundary.shapes) {
@@ -264,6 +308,107 @@ export function signedDistance(boundary: RoadBoundary, x: number, z: number): Si
     }
   }
   return { distance: best, segmentId: bestId };
+}
+
+/** Builds the bucket grid. Shapes are registered in every cell their bounding box touches. */
+export function buildBoundaryGrid(shapes: readonly BoundaryShape[], cellMeters: number): BoundaryGrid | null {
+  if (shapes.length === 0) return null;
+  if (!(cellMeters > 0)) throw new Error(`Boundary grid cell must be positive, got ${cellMeters}`);
+  let minX = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxZ = -Infinity;
+  for (const shape of shapes) {
+    minX = Math.min(minX, shape.minX);
+    minZ = Math.min(minZ, shape.minZ);
+    maxX = Math.max(maxX, shape.maxX);
+    maxZ = Math.max(maxZ, shape.maxZ);
+  }
+  const cols = Math.floor((maxX - minX) / cellMeters) + 1;
+  const rows = Math.floor((maxZ - minZ) / cellMeters) + 1;
+  const buckets: number[][] = Array.from({ length: cols * rows }, () => []);
+  shapes.forEach((shape, index) => {
+    const c0 = Math.floor((shape.minX - minX) / cellMeters);
+    const c1 = Math.floor((shape.maxX - minX) / cellMeters);
+    const r0 = Math.floor((shape.minZ - minZ) / cellMeters);
+    const r1 = Math.floor((shape.maxZ - minZ) / cellMeters);
+    for (let r = r0; r <= r1; r += 1) {
+      for (let c = c0; c <= c1; c += 1) buckets[r * cols + c]?.push(index);
+    }
+  });
+  return { cellMeters, originX: minX, originZ: minZ, cols, rows, buckets, stamp: new Uint32Array(shapes.length), generation: 0 };
+}
+
+/**
+ * Signed distance to the drivable region, and the id of the nearest segment. Negative inside.
+ *
+ * Grid search. The query cell is scanned in square rings. After ring r, every shape not yet seen lies at least r cells
+ * away from the query point, so its distance is at least r * cell. The search stops as soon as the best distance found
+ * is below that bound. Ties go to the lowest shape index, as in the reference scan, so the result is identical.
+ */
+export function signedDistance(boundary: RoadBoundary, x: number, z: number): SignedDistanceResult {
+  const period = boundary.periodMeters;
+  if (period === null) return baseSignedDistance(boundary, x, z);
+  // Torus: the base domain is [origin, origin + period), aligned to the lattice. The nearest image of each shape is tested near each seam.
+  const bx = wrapToBase(x, period);
+  const bz = wrapToBase(z, period);
+  let best = baseSignedDistance(boundary, bx, bz);
+  for (const ox of TORUS_OFFSETS) {
+    for (const oz of TORUS_OFFSETS) {
+      if (ox === 0 && oz === 0) continue;
+      const px = bx + ox * period;
+      const pz = bz + oz * period;
+      // The image point lies outside the shapes' bounds by more than the reach, so every shape is farther than the best.
+      if (px < boundary.minX - TORUS_REACH_METERS || px > boundary.maxX + TORUS_REACH_METERS) continue;
+      if (pz < boundary.minZ - TORUS_REACH_METERS || pz > boundary.maxZ + TORUS_REACH_METERS) continue;
+      const candidate = baseSignedDistance(boundary, px, pz);
+      if (candidate.distance < best.distance) best = candidate;
+    }
+  }
+  return best;
+}
+
+/** Signed distance to the nearest shape on the unwrapped plane. Used directly by finite worlds. */
+function baseSignedDistance(boundary: RoadBoundary, x: number, z: number): SignedDistanceResult {
+  const grid = boundary.grid;
+  if (!grid) return signedDistanceReference(boundary, x, z);
+  const gx = Math.floor((x - grid.originX) / grid.cellMeters);
+  const gz = Math.floor((z - grid.originZ) / grid.cellMeters);
+  // Outside the grid the reference scan is used. Road shapes are inside it, so this path is rare.
+  if (gx < 0 || gz < 0 || gx >= grid.cols || gz >= grid.rows) return signedDistanceReference(boundary, x, z);
+
+  grid.generation = grid.generation >= 0xfffffff0 ? 1 : grid.generation + 1;
+  const generation = grid.generation;
+  let best = Infinity;
+  let bestIndex = -1;
+  const maxRing = Math.max(grid.cols, grid.rows);
+  for (let ring = 0; ring <= maxRing; ring += 1) {
+    for (let row = gz - ring; row <= gz + ring; row += 1) {
+      if (row < 0 || row >= grid.rows) continue;
+      const onEdgeRow = row === gz - ring || row === gz + ring;
+      const step = onEdgeRow ? 1 : 2 * ring;
+      for (let col = gx - ring; col <= gx + ring; col += step) {
+        if (col < 0 || col >= grid.cols) continue;
+        const bucket = grid.buckets[row * grid.cols + col];
+        if (!bucket) continue;
+        for (const index of bucket) {
+          if (grid.stamp[index] === generation) continue;
+          grid.stamp[index] = generation;
+          const shape = boundary.shapes[index];
+          if (!shape) continue;
+          if (boundsLowerBound(shape, x, z) > best) continue;
+          const d = shapeSignedDistance(shape, x, z);
+          if (d < best || (d === best && index < bestIndex)) {
+            best = d;
+            bestIndex = index;
+          }
+        }
+      }
+    }
+    if (best < ring * grid.cellMeters) break;
+  }
+  const winner = bestIndex >= 0 ? boundary.shapes[bestIndex] : undefined;
+  return { distance: best, segmentId: winner ? winner.segmentId : null };
 }
 
 /** Outward unit normal of the boundary at (x, z), from the numeric gradient of the signed distance. */

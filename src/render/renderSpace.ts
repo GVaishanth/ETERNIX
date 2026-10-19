@@ -13,6 +13,14 @@ export function setRenderVector(target: Vector3, simPoint: Vec3): Vector3 {
   return target.set(converted.x, converted.y, converted.z);
 }
 
+/**
+ * Same as setRenderVector, but relative to a floating origin (see worldOrigin.ts). Used for objects outside SimRoot, the
+ * camera, so they agree with the world that SimRoot draws relative to that origin.
+ */
+export function setRenderVectorFrom(target: Vector3, simPoint: Vec3, origin: { x: number; z: number }): Vector3 {
+  return target.set(simPoint.x - origin.x, simPoint.y, -(simPoint.z - origin.z));
+}
+
 /** Converts simulation bounds to render bounds. Z flips, so the min and max swap on that axis. */
 export function renderBoundsFromSim(bounds: AxisAlignedBounds): Box3 {
   const min = toRenderSpace(bounds.min);

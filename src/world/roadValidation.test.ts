@@ -121,3 +121,96 @@ describe('connection mismatches are reported, not snapped', () => {
     expect(report.issues.some((i) => i.connectionId === 'bogus' && /no port/.test(i.message))).toBe(true);
   });
 });
+
+/** A single straight segment (no connections) that rises from startHeight over runMeters at the given grade. */
+function slopedStraight(grade: number, startHeight = 0, runMeters = 200): RoadNetwork {
+  const samples = 21;
+  const points = Array.from({ length: samples }, (_, k) => {
+    const t = k / (samples - 1);
+    return { x: 0, y: startHeight + grade * runMeters * t, z: runMeters * t };
+  });
+  const s = points.map((_, k) => (runMeters * k) / (samples - 1));
+  const headings = points.map(() => 0);
+  const startPos = points[0]!;
+  const endPos = points[samples - 1]!;
+  const segment = {
+    id: 'slope',
+    kind: 'straight',
+    roadType: 'circuit',
+    ports: [
+      { id: 'start', position: { ...startPos }, outward: { x: 0, y: 0, z: -1 }, widthMeters: 7, elevationMeters: startHeight, terminal: true },
+      { id: 'end', position: { ...endPos }, outward: { x: 0, y: 0, z: 1 }, widthMeters: 7, elevationMeters: endPos.y, terminal: true },
+    ],
+    centerline: { s, points, headings },
+    lengthMeters: runMeters,
+    curvatureRadiusMeters: null,
+    arc: null,
+    junction: null,
+    laneCount: 2,
+    laneWidthMeters: 3.5,
+    roadWidthMeters: 7,
+    shoulderWidthMeters: 1,
+    boundaryHalfWidthMeters: 4,
+    elevationMeters: startHeight,
+    surface: 'asphalt',
+    drivingDirection: 'twoWay',
+    leftBoundary: 'none',
+    rightBoundary: 'none',
+    speedLimitMps: 14,
+  } as RoadNetwork['segments'][number];
+  return { id: 'slope-test', name: 'slope test', segments: [segment], connections: [], spawn: { position: { x: 0, y: 0, z: 0 }, yawRadians: 0 } };
+}
+
+describe('elevation and grade', () => {
+  it('accepts a straight at 6 percent grade', () => {
+    const report = validateRoadNetwork(slopedStraight(0.06));
+    expect(report.issues.filter((i) => /grade/.test(i.message))).toEqual([]);
+  });
+
+  it('accepts a straight at exactly the 8 percent limit', () => {
+    const report = validateRoadNetwork(slopedStraight(0.08));
+    expect(report.issues.filter((i) => /grade/.test(i.message))).toEqual([]);
+  });
+
+  it('rejects a straight at 10 percent grade and names the segment', () => {
+    const report = validateRoadNetwork(slopedStraight(0.1));
+    const issue = report.issues.find((i) => /grade/.test(i.message));
+    expect(report.valid).toBe(false);
+    expect(issue?.message).toMatch(/10\.00% exceeds the 8% limit/);
+    expect(issue?.segmentIds).toEqual(['slope']);
+  });
+
+  it('accepts a road that starts above ground level', () => {
+    const report = validateRoadNetwork(slopedStraight(0.05, 42));
+    expect(report.issues.filter((i) => /elevation|grade/.test(i.message))).toEqual([]);
+  });
+
+  it('rejects a port whose position y differs from its elevation', () => {
+    const network = slopedStraight(0.05, 10);
+    const port = network.segments[0]?.ports.find((p) => p.id === 'start');
+    if (port) port.position.y = 3;
+    const report = validateRoadNetwork(network);
+    expect(report.issues.some((i) => /port start elevation must match its position y/.test(i.message))).toBe(true);
+  });
+
+  it('rejects a segment elevation that does not match its start port', () => {
+    const network = slopedStraight(0.05, 10);
+    if (network.segments[0]) network.segments[0].elevationMeters = 0;
+    const report = validateRoadNetwork(network);
+    expect(report.issues.some((i) => /segment elevation must equal the start port elevation/.test(i.message))).toBe(true);
+  });
+
+  it('rejects a junction port that is not at the height of its flat pad', () => {
+    const network = buildCircuitNetwork();
+    const junction = network.segments.find((segment) => segment.kind === 'junction');
+    if (!junction?.junction) throw new Error('circuit has no junction');
+    junction.junction.centre = { ...junction.junction.centre, y: 4 };
+    const report = validateRoadNetwork(network);
+    expect(report.valid).toBe(false);
+    expect(report.issues.some((i) => /must sit at the pad height 4\.00 m/.test(i.message))).toBe(true);
+  });
+
+  it('keeps the circuit valid after the flat-road rule was relaxed', () => {
+    expect(validateRoadNetwork(buildCircuitNetwork()).valid).toBe(true);
+  });
+});

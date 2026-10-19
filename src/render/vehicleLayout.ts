@@ -1,28 +1,19 @@
 import type { VehicleConfig } from '../config/vehicleConfig';
 import type { Vec3 } from '../core/types';
+import type { VehicleDesignProfile } from '../vehicles/designProfile';
+import { buildBodyParts, bodyFrameFromConfig } from './vehicleModel/bodyParts';
+import type { VehiclePart } from './vehicleModel/partTypes';
+
+export type { VehiclePart, VehiclePartRole, BoxPart, CylinderPart, ArchPart, LoftPart, WheelPart } from './vehicleModel/partTypes';
 
 /*
- * Pure description of the procedural car, in SIMULATION space, relative to the vehicle origin.
- * Origin: center of the rear axle, on the ground (y = 0).
- * Axes:   +X right, +Y up, +Z forward (the nose). The car's nose faces +Z, matching the simulation.
+ * Pure description of one procedural car, in SIMULATION space, relative to the vehicle origin.
+ * Origin: centre of the rear axle, on the ground (y = 0). Axes: +X right, +Y up, +Z forward (the nose).
  * The render layer (VehicleVisual) turns these parts into meshes. It does not redefine them.
+ *
+ * Every car shares the collision hull, wheelbase, track, and wheel radius from VEHICLE_CONFIG. Only the body design
+ * (silhouette, lights, aero, wheels) varies per car.
  */
-
-export type VehiclePartKind = 'body' | 'cabin' | 'glass' | 'headlight' | 'taillight' | 'indicator' | 'wheel';
-
-export interface VehiclePart {
-  name: string;
-  kind: VehiclePartKind;
-  center: Vec3;
-  /** Box size, meters. For wheels, `size.x` is the wheel width and `radius` is used instead of the box. */
-  size: Vec3;
-  /** Wheel radius, meters. Only set for wheels. */
-  radius?: number;
-  /** Which side the part is on. Used for symmetry checks. */
-  side: 'left' | 'right' | 'center';
-  /** Which axle a wheel belongs to. Only set for wheels. Front wheels steer. */
-  axle?: 'front' | 'rear';
-}
 
 export interface VehicleLayout {
   parts: VehiclePart[];
@@ -30,20 +21,9 @@ export interface VehicleLayout {
   frontZ: number;
   /** Rear of the body (tail), z in sim space. */
   rearZ: number;
-  /** Top of the body roof, y in sim space. */
+  /** Top of the highest roof point, y in sim space. */
   roofY: number;
 }
-
-const WHEEL_WIDTH_METERS = 0.25;
-const REAR_OVERHANG_METERS = 0.8;
-const CABIN_LENGTH_FRACTION = 0.5;
-const CABIN_WIDTH_FRACTION = 0.85;
-const CABIN_HEIGHT_METERS = 0.5;
-const GLASS_THICKNESS_METERS = 0.02;
-const LIGHT_HEIGHT_FRACTION = 0.6;
-const LIGHT_INSET_METERS = 0.3;
-const INDICATOR_INSET_METERS = 0.05;
-const LIGHT_DEPTH_METERS = 0.03;
 
 /**
  * Pivot for the cosmetic body (pitch, roll, heave), in simulation space. It sits at the wheelbase midpoint, at
@@ -53,126 +33,38 @@ export function bodyPivotPosition(config: VehicleConfig): Vec3 {
   return { x: 0, y: config.wheelRadiusMeters, z: config.wheelbaseMeters / 2 };
 }
 
-export function buildVehicleLayout(config: VehicleConfig): VehicleLayout {
-  const { wheelbaseMeters: wheelbase, trackWidthMeters: track, bodyLengthMeters: length } = config;
-  const bodyWidth = config.bodyWidthMeters;
-  const bodyHeight = config.bodyHeightMeters;
-  const wheelRadius = config.wheelRadiusMeters;
+export function buildVehicleLayout(config: VehicleConfig, design: VehicleDesignProfile): VehicleLayout {
+  const frame = bodyFrameFromConfig(config);
+  const parts = buildBodyParts(config, design);
 
-  const rearZ = -REAR_OVERHANG_METERS;
-  const frontZ = rearZ + length;
-  const bodyCenterZ = (rearZ + frontZ) / 2;
-  const bodyBottomY = wheelRadius;
-  const bodyCenterY = bodyBottomY + bodyHeight / 2;
-  const roofY = bodyBottomY + bodyHeight + CABIN_HEIGHT_METERS;
-
-  const cabinLength = length * CABIN_LENGTH_FRACTION;
-  const cabinWidth = bodyWidth * CABIN_WIDTH_FRACTION;
-  // The cabin sits slightly rearward of center, with the windshield toward the nose.
-  const cabinCenterZ = bodyCenterZ - length * 0.05;
-  const cabinCenterY = bodyBottomY + bodyHeight + CABIN_HEIGHT_METERS / 2;
-  const cabinFrontZ = cabinCenterZ + cabinLength / 2;
-  const cabinRearZ = cabinCenterZ - cabinLength / 2;
-
-  const lightY = bodyBottomY + bodyHeight * LIGHT_HEIGHT_FRACTION;
-  const lightX = bodyWidth / 2 - LIGHT_INSET_METERS;
-  const indicatorX = bodyWidth / 2 - INDICATOR_INSET_METERS;
-  const indicatorY = bodyBottomY + bodyHeight * 0.3;
-
-  const parts: VehiclePart[] = [
-    {
-      name: 'VehicleBody',
-      kind: 'body',
-      center: { x: 0, y: bodyCenterY, z: bodyCenterZ },
-      size: { x: bodyWidth, y: bodyHeight, z: length },
-      side: 'center',
-    },
-    {
-      name: 'VehicleCabin',
-      kind: 'cabin',
-      center: { x: 0, y: cabinCenterY, z: cabinCenterZ },
-      size: { x: cabinWidth, y: CABIN_HEIGHT_METERS, z: cabinLength },
-      side: 'center',
-    },
-    {
-      name: 'Windshield',
-      kind: 'glass',
-      center: { x: 0, y: cabinCenterY, z: cabinFrontZ + GLASS_THICKNESS_METERS / 2 },
-      size: { x: cabinWidth * 0.9, y: CABIN_HEIGHT_METERS * 0.8, z: GLASS_THICKNESS_METERS },
-      side: 'center',
-    },
-    {
-      name: 'RearWindow',
-      kind: 'glass',
-      center: { x: 0, y: cabinCenterY, z: cabinRearZ - GLASS_THICKNESS_METERS / 2 },
-      size: { x: cabinWidth * 0.9, y: CABIN_HEIGHT_METERS * 0.7, z: GLASS_THICKNESS_METERS },
-      side: 'center',
-    },
-    ...sidePair((side, sign) => ({
-      name: `SideWindow${sideLabel(side)}`,
-      kind: 'glass',
-      center: { x: sign * (cabinWidth / 2 + GLASS_THICKNESS_METERS / 2), y: cabinCenterY, z: cabinCenterZ },
-      size: { x: GLASS_THICKNESS_METERS, y: CABIN_HEIGHT_METERS * 0.6, z: cabinLength * 0.8 },
-      side,
-    })),
-    ...sidePair((side, sign) => ({
-      name: `Headlight${sideLabel(side)}`,
-      kind: 'headlight',
-      center: { x: sign * lightX, y: lightY, z: frontZ + LIGHT_DEPTH_METERS / 2 },
-      size: { x: 0.35, y: 0.12, z: LIGHT_DEPTH_METERS },
-      side,
-    })),
-    ...sidePair((side, sign) => ({
-      name: `Taillight${sideLabel(side)}`,
-      kind: 'taillight',
-      center: { x: sign * lightX, y: lightY, z: rearZ - LIGHT_DEPTH_METERS / 2 },
-      size: { x: 0.4, y: 0.12, z: LIGHT_DEPTH_METERS },
-      side,
-    })),
-    ...sidePair((side, sign) => ({
-      name: `IndicatorFront${sideLabel(side)}`,
-      kind: 'indicator',
-      center: { x: sign * indicatorX, y: indicatorY, z: frontZ + LIGHT_DEPTH_METERS / 2 },
-      size: { x: 0.08, y: 0.1, z: LIGHT_DEPTH_METERS },
-      side,
-    })),
-    ...sidePair((side, sign) => ({
-      name: `IndicatorRear${sideLabel(side)}`,
-      kind: 'indicator',
-      center: { x: sign * indicatorX, y: indicatorY, z: rearZ - LIGHT_DEPTH_METERS / 2 },
-      size: { x: 0.08, y: 0.1, z: LIGHT_DEPTH_METERS },
-      side,
-    })),
-  ];
-
-  // Wheels: front axle at +wheelbase, rear axle at 0. Cylinder axis is along X.
-  const halfTrack = track / 2;
-  const axles: Array<{ label: string; z: number }> = [
-    { label: 'Rear', z: 0 },
-    { label: 'Front', z: wheelbase },
+  // Wheels: front axle at +wheelbase, rear axle at 0. Each wheel is a tyre with a rim and spokes (see VehicleVisual).
+  const axles: Array<{ label: 'Rear' | 'Front'; z: number; axle: 'rear' | 'front' }> = [
+    { label: 'Rear', z: 0, axle: 'rear' },
+    { label: 'Front', z: frame.wheelbase, axle: 'front' },
   ];
   for (const axle of axles) {
     for (const side of ['left', 'right'] as const) {
       const sign = side === 'left' ? -1 : 1;
       parts.push({
-        name: `Wheel${axle.label}${sideLabel(side)}`,
         kind: 'wheel',
-        center: { x: sign * halfTrack, y: wheelRadius, z: axle.z },
-        size: { x: WHEEL_WIDTH_METERS, y: wheelRadius * 2, z: wheelRadius * 2 },
-        radius: wheelRadius,
+        name: `Wheel${axle.label}${sideLabel(side)}`,
+        role: 'wheel',
+        center: { x: sign * frame.trackHalf, y: frame.wheelRadius, z: axle.z },
+        axle: axle.axle,
         side,
-        axle: axle.label === 'Front' ? 'front' : 'rear',
+        radius: frame.wheelRadius,
+        width: design.tireWidth,
+        rim: design.rim,
+        rimColor: design.rimColor,
+        accent: design.accent,
       });
     }
   }
 
-  return { parts, frontZ, rearZ, roofY };
+  const roofY = Math.max(...design.cabin.map((station) => station[1]));
+  return { parts, frontZ: frame.frontZ, rearZ: frame.rearZ, roofY };
 }
 
 export function sideLabel(side: 'left' | 'right'): string {
   return side === 'left' ? 'Left' : 'Right';
-}
-
-function sidePair(make: (side: 'left' | 'right', sign: number) => VehiclePart): VehiclePart[] {
-  return [make('left', -1), make('right', 1)];
 }

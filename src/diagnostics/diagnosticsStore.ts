@@ -29,7 +29,7 @@ let nextErrorId = 1;
 export const useDiagnosticsStore = create<DiagnosticsState>()((set) => ({
   snapshot: null,
   errors: [],
-  panelVisible: true,
+  panelVisible: false,
   roadDebug: false,
   setSnapshot: (snapshot) => set({ snapshot }),
   pushError: (source, message) =>

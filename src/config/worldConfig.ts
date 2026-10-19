@@ -31,3 +31,16 @@ export const WORLD_CONFIG = {
   /** Half-size of the square ground plane, centered on the road. */
   groundHalfExtentMeters: 4000,
 } as const;
+
+/**
+ * World recovery (Part 5). Seconds and metres. Ordinary driving never reaches these limits: the road boundary holds the
+ * car on the drivable surface, so recovery is only for a car that is off the surface or wedged and not moving.
+ */
+export const WORLD_RECOVERY = {
+  /** Seconds the car's centre may stay outside every drivable shape before it is recovered to the nearest lane. */
+  offRoadSeconds: 2,
+  /** Seconds at near-zero speed, while in boundary contact or off the surface, before the car is recovered as stuck. */
+  stuckSeconds: 20,
+  /** Speed below which the car counts as not moving, m/s. */
+  stuckSpeedMps: 0.5,
+} as const;

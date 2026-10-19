@@ -5,7 +5,10 @@ import type { Vec3 } from '../core/types';
  * Navigation, traffic AI, race routes, pursuit, and minimap generation read this model. Meshes are derived from it.
  *
  * Coordinate system: simulation space. +X right, +Y up, +Z forward, meters. Headings are yaw radians: 0 faces +Z,
- * positive turns right (see src/core/coordinates.ts). Every road is flat, with elevation 0.
+ * positive turns right (see src/core/coordinates.ts). Roads may rise and fall: a port's position.y equals its
+ * elevationMeters, and a sloped centerline carries its height in the sample y values. Grade is limited by
+ * TERRAIN_CONFIG.maxRoadGrade (src/config/terrainConfig.ts), checked by roadValidation.ts. Roads built with the
+ * current builders are still flat (elevation 0).
  *
  * Connection contract (checked by roadValidation.ts). A port is a point where a segment ends, or where a junction
  * opens. Two ports connect when:
@@ -19,10 +22,11 @@ import type { Vec3 } from '../core/types';
 
 export type SegmentKind = 'straight' | 'arc' | 'junction';
 
-/** circuit: part of the loop. spur: dead-end branch. junction: intersection box. */
-export type RoadType = 'circuit' | 'spur' | 'junction';
+/** circuit: part of the loop. spur: dead-end branch. junction: intersection box. city: street in the city grid. highway: expressway. */
+export type RoadType = 'circuit' | 'spur' | 'junction' | 'city' | 'highway';
 
-export type SurfaceType = 'asphalt';
+/** Asphalt is the normal road. Dirt roads slow the car and cut its grip (config/surfaceConfig.ts). */
+export type SurfaceType = 'asphalt' | 'dirt';
 
 export type BoundaryKind = 'guardrail' | 'none';
 
@@ -79,6 +83,7 @@ export interface RoadSegment {
   shoulderWidthMeters: number;
   /** Half of the total width, to the outer shoulder edge. */
   boundaryHalfWidthMeters: number;
+  /** Ground height at the start port, meters. Must equal the start port's elevationMeters (checked). */
   elevationMeters: number;
   surface: SurfaceType;
   /** Two-way roads carry traffic in both directions. The centerline direction is the primary (forward) direction. */
@@ -107,6 +112,12 @@ export interface RoadNetwork {
   /** Explicit connections. Every port is either in one connection or marked terminal. */
   connections: RoadConnection[];
   spawn: { position: Vec3; yawRadians: number };
+  /**
+   * Period of a looping network, in metres, on both horizontal axes. Null or absent means the network is finite. When
+   * set, ports and lane successors are compared on the torus, so a connection may join a port at one edge to a port at
+   * the opposite edge. Positions are still the base domain [origin, origin + period), aligned to the lattice.
+   */
+  periodMeters?: number;
 }
 
 /** Looks up a segment by id. Returns undefined when the id is unknown. */

@@ -1,7 +1,30 @@
-node_modules
-dist
-coverage
+# Dependencies and build output (regenerate with npm ci and npm run build)
+node_modules/
+dist/
+coverage/
+
+# Logs and temporary files
 *.log
+*.tmp
+*.swp
+*~
+
+# OS and editor files
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Local environment files. Never commit real values.
 .env
-.env.local
+.env.*
+!.env.example
+
+# Python harness caches (tools/)
+__pycache__/
+*.pyc
+
+# Local AI-assistant skill files and browser-test output. Not part of the game.
+.claude/
+browser-output/
+verification/

@@ -1,4 +1,7 @@
+import type { Vec3 } from '../core/types';
 import type { RoadNetwork, RoadSegment } from './roadTypes';
+import { TERRAIN_CONFIG } from '../config/terrainConfig';
+import { wrapDelta } from './wrap/worldWrap';
 
 /*
  * Programmatic connection validation. Nothing is snapped: every mismatch is reported with the segment ids involved,
@@ -35,6 +38,13 @@ function distance3(a: { x: number; y: number; z: number }, b: { x: number; y: nu
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
+/** Distance between two points on a torus in x and z. y is not periodic. */
+function periodicDistance3(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }, period: number): number {
+  const dx = wrapDelta(a.x, b.x, period);
+  const dz = wrapDelta(a.z, b.z, period);
+  return Math.hypot(dx, a.y - b.y, dz);
+}
+
 function dot2(a: { x: number; z: number }, b: { x: number; z: number }): number {
   return a.x * b.x + a.z * b.z;
 }
@@ -55,13 +65,38 @@ function checkSegmentInternal(segment: RoadSegment, issues: RoadValidationIssue[
         message: `port ${port.id} outward must be a horizontal unit vector`,
       });
     }
-    if (port.elevationMeters !== 0 || port.position.y !== port.elevationMeters) {
+    if (Math.abs(port.position.y - port.elevationMeters) > CONNECTION_ELEVATION_TOLERANCE_M) {
       issues.push({
         severity: 'error',
         segmentIds: [segment.id],
         connectionId: null,
-        message: `port ${port.id} elevation must match its position y (flat network)`,
+        message: `port ${port.id} elevation must match its position y`,
       });
+    }
+  }
+
+  const startPort = segment.ports.find((port) => port.id === 'start');
+  if (startPort && Math.abs(segment.elevationMeters - startPort.elevationMeters) > CONNECTION_ELEVATION_TOLERANCE_M) {
+    issues.push({
+      severity: 'error',
+      segmentIds: [segment.id],
+      connectionId: null,
+      message: 'segment elevation must equal the start port elevation',
+    });
+  }
+
+  // A junction pad is one flat square, so every port on it must sit at the pad's height.
+  if (segment.kind === 'junction' && segment.junction) {
+    const padHeight = segment.junction.centre.y;
+    for (const port of segment.ports) {
+      if (Math.abs(port.elevationMeters - padHeight) > CONNECTION_ELEVATION_TOLERANCE_M) {
+        issues.push({
+          severity: 'error',
+          segmentIds: [segment.id],
+          connectionId: null,
+          message: `junction port ${port.id} must sit at the pad height ${padHeight.toFixed(2)} m (the pad is flat)`,
+        });
+      }
     }
   }
 
@@ -89,6 +124,38 @@ function checkSegmentInternal(segment: RoadSegment, issues: RoadValidationIssue[
         break;
       }
     }
+    checkCenterlineGrade(segment, centerline.points, issues);
+  }
+}
+
+/**
+ * Grade (rise over horizontal run) between consecutive centerline samples must not exceed TERRAIN_CONFIG.maxRoadGrade.
+ * A vertical step with no horizontal run is reported as well.
+ */
+function checkCenterlineGrade(segment: RoadSegment, points: readonly Vec3[], issues: RoadValidationIssue[]): void {
+  let worst = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    if (!a || !b) continue;
+    const run = Math.hypot(b.x - a.x, b.z - a.z);
+    const rise = Math.abs(b.y - a.y);
+    if (run < 1e-6) {
+      if (rise > CONNECTION_ELEVATION_TOLERANCE_M) {
+        issues.push({ severity: 'error', segmentIds: [segment.id], connectionId: null, message: 'centerline has a vertical step with no horizontal run' });
+        return;
+      }
+      continue;
+    }
+    worst = Math.max(worst, rise / run);
+  }
+  if (worst > TERRAIN_CONFIG.maxRoadGrade + 1e-9) {
+    issues.push({
+      severity: 'error',
+      segmentIds: [segment.id],
+      connectionId: null,
+      message: `grade ${(worst * 100).toFixed(2)}% exceeds the ${(TERRAIN_CONFIG.maxRoadGrade * 100).toFixed(0)}% limit`,
+    });
   }
 }
 
@@ -153,7 +220,9 @@ export function validateRoadNetwork(network: RoadNetwork): RoadValidationReport 
     const [pa, pb] = resolved.map((entry) => entry.port);
     if (!pa || !pb) continue;
 
-    const gap = distance3(pa.position, pb.position);
+    const gap = network.periodMeters !== undefined
+      ? periodicDistance3(pa.position, pb.position, network.periodMeters)
+      : distance3(pa.position, pb.position);
     if (gap > CONNECTION_POSITION_TOLERANCE_M) {
       issues.push({ severity: 'error', segmentIds: involved, connectionId: connection.id, message: `ports are ${gap.toFixed(3)} m apart (limit ${CONNECTION_POSITION_TOLERANCE_M} m)` });
     }

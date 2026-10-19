@@ -15,6 +15,8 @@ canvas {
 
 .hud {
   position: fixed;
+  /* Above the presentation status line (no z-index, bottom 200px), below the career and garage panels (12 and up). */
+  z-index: 11;
   left: 20px;
   bottom: 18px;
   color: #ffffff;
@@ -150,10 +152,75 @@ canvas {
   opacity: 0.85;
 }
 
-.hud-hint {
+.hud-info {
+  position: relative;
+  display: inline-block;
   margin-top: 10px;
+  pointer-events: auto;
+}
+
+.hud-info-button {
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  font: 600 12px system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.hud-info-button:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.hud-info-button:focus-visible {
+  outline: 2px solid #ffd166;
+  outline-offset: 2px;
+}
+
+.hud-info-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  width: 440px;
+  max-width: calc(100vw - 40px);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 24px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(8, 12, 18, 0.97);
   font-size: 12px;
-  opacity: 0.8;
+  line-height: 1.5;
+  text-shadow: none;
+}
+
+.hud-info-title {
+  margin: 0 0 4px;
+  color: #ffd166;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.hud-info-rows {
+  margin: 0;
+}
+
+.hud-info-row {
+  display: flex;
+  gap: 10px;
+}
+
+.hud-info-row dt {
+  min-width: 64px;
+  font-weight: 700;
+}
+
+.hud-info-row dd {
+  margin: 0;
+  opacity: 0.9;
 }
 
 .debug-panel {
@@ -198,4 +265,1340 @@ canvas {
 .debug-error {
   color: #ff8a80;
   overflow-wrap: anywhere;
+}
+
+/* City minimap (Part 5). Bottom right, fixed scale, draw-only canvas. */
+.minimap {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  width: 220px;
+  height: 220px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.minimap canvas {
+  display: block;
+  width: 220px;
+  height: 220px;
+}
+
+/* Race UI (Part 6). Compact: one card or one strip at a time, plus a short toast. Keys are shown on each button. */
+.race-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  user-select: none;
+  font-family: system-ui, sans-serif;
+}
+
+.race-layer .hud-button,
+.race-layer .race-card,
+.race-layer .race-countdown,
+.race-layer .race-strip {
+  pointer-events: auto;
+}
+
+.race-card {
+  position: fixed;
+  top: 84px;
+  right: 20px;
+  width: 300px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  background: rgba(12, 16, 22, 0.86);
+  border: 1px solid rgba(255, 183, 3, 0.55);
+  text-shadow: none;
+}
+
+.race-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #ffb703;
+}
+
+.race-kicker-win {
+  color: #7ee787;
+}
+
+.race-title {
+  margin: 4px 0 6px;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.race-summary,
+.race-blocked {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffb703;
+}
+
+.race-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.race-note {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+.race-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin: 0 0 10px;
+}
+
+.race-facts div {
+  display: flex;
+  flex-direction: column;
+}
+
+.race-facts dt {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.race-facts dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.race-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.race-primary {
+  background: rgba(255, 183, 3, 0.9);
+  color: #111111;
+  border-color: rgba(255, 183, 3, 1);
+}
+
+.race-countdown {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.race-countdown-number {
+  font-size: 96px;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.8);
+}
+
+.race-countdown-hint {
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.race-strip {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.race-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(12, 16, 22, 0.78);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.race-timer {
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+}
+
+.race-go {
+  color: #7ee787;
+  font-weight: 900;
+  font-size: 16px;
+}
+
+.race-paused {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(235, 87, 87, 0.85);
+}
+
+.race-limit,
+.race-lap,
+.race-next {
+  opacity: 0.9;
+  font-weight: 600;
+}
+
+.race-notices {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  text-align: center;
+}
+
+.race-notices li {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(12, 16, 22, 0.7);
+  margin-top: 4px;
+}
+
+.race-standings {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.race-standings li {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.race-standing-player {
+  color: #ffb703;
+  font-weight: 800;
+}
+
+.race-toast {
+  position: fixed;
+  bottom: 120px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: rgba(12, 16, 22, 0.85);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Police pursuit HUD (Part 7). Top left, under the Pause and Reset buttons. The DEV debug panel is top right, so it is
+   kept clear of it. Hidden by the component when no pursuit is active. */
+.pursuit-hud,
+.pursuit-toast {
+  position: fixed;
+  top: 60px;
+  left: 16px;
+  z-index: 20;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(16, 20, 32, 0.82);
+  color: #f2f4f8;
+  font: 500 13px/1.35 system-ui, sans-serif;
+  pointer-events: none;
+}
+.pursuit-hud p {
+  margin: 4px 0 0;
+}
+.pursuit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pursuit-title {
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffd166;
+}
+.pursuit-level {
+  display: inline-flex;
+  gap: 3px;
+}
+.pursuit-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.pursuit-pip-on {
+  background: #ef476f;
+}
+.pursuit-units,
+.pursuit-status {
+  color: #c9d1e0;
+}
+.pursuit-gauge {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pursuit-gauge-label {
+  font-size: 12px;
+  color: #c9d1e0;
+}
+.pursuit-gauge-track {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+.pursuit-gauge-fill {
+  display: block;
+  height: 100%;
+  background: #06d6a0;
+}
+.pursuit-notice {
+  margin-top: 8px !important;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  font-weight: 600;
+}
+.pursuit-toast {
+  color: #06d6a0;
+  font-weight: 700;
+}
+
+/* ---- Part 8: garage ---- */
+.garage-credits {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #ffffff;
+  font: 600 12px system-ui, sans-serif;
+  pointer-events: none;
+  user-select: none;
+}
+
+.garage-credits-note {
+  color: #ffb000;
+  font-weight: 500;
+}
+
+.garage-balance-label {
+  color: #cfd6de;
+  font-weight: 500;
+}
+
+.garage-balance-value {
+  font: 700 16px system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+
+.garage-launch {
+  position: fixed;
+  top: 48px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 260px;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  font: 500 12px system-ui, sans-serif;
+}
+
+.garage-launch .hud-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.garage-launch-reason {
+  text-align: right;
+}
+
+.garage-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
+  box-sizing: border-box;
+  overflow: auto;
+  background: rgba(12, 16, 22, 0.94);
+  color: #e8edf2;
+  font: 13px system-ui, sans-serif;
+}
+
+.garage-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.garage-header > div:first-child {
+  flex: 1 1 260px;
+}
+
+.garage-title {
+  margin: 0;
+  font: 700 22px system-ui, sans-serif;
+}
+
+.garage-sub,
+.garage-hint,
+.garage-summary {
+  margin: 2px 0;
+  color: #aab4bf;
+  font-size: 12px;
+}
+
+.garage-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.garage-body {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.garage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.garage-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #e8edf2;
+  font: 600 13px system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.garage-row-focus {
+  border-color: #ffb000;
+  background: rgba(255, 176, 0, 0.12);
+}
+
+.garage-row-status {
+  color: #aab4bf;
+  font-weight: 500;
+  font-size: 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.garage-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.garage-preview {
+  height: 240px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1b2330;
+}
+
+.garage-preview canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+.garage-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.garage-primary {
+  border-color: #ffb000;
+}
+
+.garage-specs {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) 1fr 1fr;
+  gap: 2px 12px;
+  max-width: 560px;
+  font-variant-numeric: tabular-nums;
+}
+
+.garage-spec-head {
+  display: contents;
+  color: #aab4bf;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.garage-spec-row {
+  display: contents;
+}
+
+.garage-spec-muted {
+  color: #aab4bf;
+}
+
+.garage-spec-changed {
+  color: #ffd166;
+  font-weight: 600;
+}
+
+.garage-section h3 {
+  margin: 6px 0 4px;
+  font: 700 14px system-ui, sans-serif;
+}
+
+.garage-upgrade {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.garage-upgrade-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.garage-upgrade-name {
+  font-weight: 600;
+}
+
+.garage-upgrade-desc {
+  color: #aab4bf;
+  font-size: 12px;
+}
+
+.garage-upgrade-reason {
+  grid-column: 1 / -1;
+}
+
+.garage-pips {
+  display: flex;
+  gap: 4px;
+}
+
+.garage-pip {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+}
+
+.garage-pip-on {
+  background: #ffb000;
+  border-color: #ffb000;
+}
+
+.garage-upgrade .hud-button:disabled,
+.garage-actions .hud-button:disabled,
+.garage-swatch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.garage-swatches {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.garage-swatch {
+  width: 34px;
+  height: 34px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.garage-swatch-current {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 2px #ffb000;
+}
+
+.garage-message {
+  min-height: 1.2em;
+  margin: 0;
+  color: #ffd166;
+  font-weight: 600;
+}
+
+.garage-notice {
+  margin: 0;
+  padding: 6px 10px;
+  border-left: 3px solid #ffb000;
+  color: #ffd166;
+}
+
+@media (max-width: 760px) {
+  .garage-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Career (Part 9). The launcher sits above the minimap, bottom right. The outcome card sits bottom centre, above the race
+   toast. The hub reuses the garage overlay for its backdrop. */
+.career-launch {
+  position: fixed;
+  right: 18px;
+  bottom: 250px;
+  width: 220px;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+.career-button {
+  background: rgba(12, 16, 22, 0.85);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-shadow: none;
+}
+.career-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.career-primary {
+  border-color: #f5c542;
+  color: #f5c542;
+}
+.career-launch-button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.career-launch-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.career-launch-note {
+  font-size: 12px;
+  margin: 0;
+}
+.career-muted {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  margin: 2px 0;
+}
+.career-outcome {
+  position: fixed;
+  left: 50%;
+  bottom: 170px;
+  transform: translateX(-50%);
+  width: min(420px, 90vw);
+  z-index: 14;
+  background: rgba(12, 16, 22, 0.92);
+  color: #ffffff;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.career-outcome-error {
+  border: 1px solid #e0525f;
+}
+.career-outcome-title {
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+.career-outcome-line {
+  margin: 2px 0;
+}
+.career-outcome .career-button {
+  margin-top: 6px;
+}
+.career-overlay .career-panel {
+  margin: 40px auto;
+  width: calc(100% - 40px);
+  max-width: 760px;
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  box-sizing: border-box;
+  background: rgba(12, 16, 22, 0.96);
+  color: #ffffff;
+  border-radius: 10px;
+  padding: 18px 22px;
+}
+.career-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.career-title {
+  margin: 0;
+  font-size: 22px;
+}
+.career-rank-name {
+  font-weight: 700;
+  font-size: 16px;
+}
+.career-intro p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+.career-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.career-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding: 8px;
+}
+.career-stat-wide {
+  grid-column: span 2;
+}
+.career-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.6);
+}
+.career-value {
+  font-size: 15px;
+  font-weight: 600;
+}
+.career-bar {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 4px 0;
+}
+.career-bar-fill {
+  height: 100%;
+  background: #f5c542;
+}
+.career-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+}
+.career-tab {
+  background: transparent;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.career-tab-active {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: #ffffff;
+}
+.career-body {
+  min-height: 120px;
+}
+.career-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.career-item {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  padding: 8px 10px;
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+}
+.career-item-available {
+  border-left-color: #f5c542;
+}
+.career-item-completed {
+  border-left-color: #4caf7a;
+}
+.career-item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.career-item-title {
+  font-weight: 700;
+}
+.career-item-text {
+  margin: 4px 0;
+  font-size: 13px;
+}
+.career-rewards {
+  font-size: 12px;
+  margin: 4px 0;
+}
+.career-reasons {
+  font-size: 12px;
+  color: #ffb4a8;
+  margin: 4px 0;
+}
+.career-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  white-space: nowrap;
+}
+.career-pill-available {
+  border-color: #f5c542;
+  color: #f5c542;
+}
+.career-pill-completed {
+  border-color: #4caf7a;
+  color: #4caf7a;
+}
+.career-pill-locked {
+  color: rgba(255, 255, 255, 0.6);
+}
+.career-board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.career-board-button,
+.career-board-player {
+  display: grid;
+  grid-template-columns: 28px 1fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #ffffff;
+  font: inherit;
+  text-align: left;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+.career-board-player {
+  cursor: default;
+  font-weight: 700;
+}
+.career-board-row-selected .career-board-button {
+  border-color: #f5c542;
+}
+.career-tag {
+  color: #f5c542;
+  font-size: 11px;
+}
+.career-challenge {
+  margin-top: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.career-challenge-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+.career-challenge-actions {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+.career-message {
+  color: #f5c542;
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+.career-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* Part 10: presentation. One set of motion tokens, used by every transition in the game. */
+:root {
+  --motion-fast: 120ms;
+  --motion-base: 220ms;
+  --motion-slow: 360ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+.presentation-status {
+  position: fixed;
+  left: 20px;
+  bottom: 200px;
+  color: #ffffff;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  opacity: 0.85;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  user-select: none;
+}
+.garage-overlay,
+.career-overlay {
+  animation: overlay-in var(--motion-base) var(--ease-standard);
+}
+.career-panel,
+.career-outcome {
+  animation: panel-in var(--motion-base) var(--ease-standard);
+}
+.career-button,
+.career-tab,
+.career-board-button {
+  transition: background-color var(--motion-fast) var(--ease-standard), border-color var(--motion-fast) var(--ease-standard), transform var(--motion-fast) var(--ease-standard);
+}
+.career-button:hover:not(:disabled),
+.career-tab:hover,
+.career-board-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.career-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.career-button:focus-visible,
+.career-tab:focus-visible,
+.career-board-button:focus-visible {
+  outline: 2px solid #f5c542;
+  outline-offset: 2px;
+}
+.career-button:disabled {
+  cursor: default;
+}
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+  }
+  .garage-overlay,
+  .career-overlay,
+  .career-panel,
+  .career-outcome {
+    animation: none;
+  }
+  .career-button,
+  .career-tab,
+  .career-board-button {
+    transition: none;
+  }
+}
+
+/* Start-up failure (Part 11): shown instead of a blank page when the game cannot start (for example, no WebGL). */
+.startup-error {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  box-sizing: border-box;
+  background: #0b0f17;
+  color: #e9edf2;
+  font-family: system-ui, sans-serif;
+  text-align: center;
+}
+
+.startup-error h1 {
+  font-size: 22px;
+  margin: 0;
+}
+
+.startup-error p {
+  max-width: 460px;
+  margin: 0;
+  line-height: 1.5;
+  color: #b8c2d0;
+}
+
+.startup-error-detail {
+  max-width: 640px;
+  white-space: pre-wrap;
+  font-size: 12px;
+  color: #ffb4a8;
+}
+
+/* The door icon on the startup error screen: the same icon as the HUD door, in a bordered square. */
+.startup-error-door {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #5b6678;
+  border-radius: 4px;
+  background: #1a2230;
+  color: #e9edf2;
+}
+
+.startup-error-door:hover {
+  background: #243047;
+}
+
+.startup-error button {
+  padding: 8px 18px;
+  border: 1px solid #5b6678;
+  border-radius: 4px;
+  background: #1a2230;
+  color: #e9edf2;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Save problem notice on the HUD (Part 11). Shown under the credits balance; does not block play. */
+.garage-save-notice {
+  margin: 4px 0 0;
+  max-width: 260px;
+  margin-left: auto;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
+  color: #ffd27a;
+}
+
+/* Part 12 car overhaul: garage list filters, status, ratings, preview views, and fallback. */
+.garage-list-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.garage-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.garage-filter,
+.garage-view {
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  background: transparent;
+  color: #d6dde6;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.garage-filter-on,
+.garage-view-on {
+  border-color: #ffb000;
+  color: #ffb000;
+  background: rgba(255, 176, 0, 0.12);
+}
+
+.garage-list {
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.garage-row-name {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.garage-row-roster {
+  color: #7f8b98;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.garage-status-active,
+.garage-status-owned {
+  color: #9be59b;
+}
+
+.garage-status-locked {
+  color: #8a94a1;
+}
+
+.garage-status-available {
+  color: #ffd27a;
+}
+
+.garage-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.garage-car-name {
+  margin: 0;
+  font-size: 18px;
+}
+
+.garage-car-meta {
+  color: #aab4bf;
+  font-size: 12px;
+}
+
+.garage-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.garage-views {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.garage-preview-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  text-align: center;
+  color: #d6dde6;
+  background: #1b2330;
+  border-radius: 4px;
+  min-height: 160px;
+}
+
+.garage-ratings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 14px;
+}
+
+.garage-rating {
+  display: grid;
+  grid-template-columns: 110px 1fr 34px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.garage-rating-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.garage-rating-fill {
+  display: block;
+  height: 100%;
+  background: #ffb000;
+}
+
+.garage-rating-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Door icon in the HUD strip. Same frame as the other HUD buttons, square, with the icon centred. */
+.hud-door {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+/* Popup for a question asked before an action (leaving the game, buying). Above the garage and career panels (z 20). */
+.confirm-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.confirm-dialog {
+  display: grid;
+  gap: 12px;
+  width: 380px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #0b0f16;
+  color: #e9edf2;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.confirm-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.confirm-message {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #b8c2d0;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.confirm-actions .hud-button {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+/* Career prompt: "Press C to start career mode". Top centre, out of the way of the driving view's corners. It takes no
+   input of its own; the key C is handled by the game. */
+.career-prompt {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 13;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 8px;
+  border-radius: 8px;
+  background: rgba(12, 16, 22, 0.88);
+  border: 1px solid rgba(245, 197, 66, 0.6);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: auto;
+  animation: career-prompt-in 260ms ease-out;
+}
+.career-prompt-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: #f5c542;
+  color: #0c1016;
+  font-weight: 800;
+  font-size: 14px;
+}
+.career-prompt-close {
+  background: transparent;
+  border: 0;
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.career-prompt-close:hover {
+  color: #ffffff;
+}
+@keyframes career-prompt-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .career-prompt {
+    animation: none;
+  }
+}
+
+/* Career lead: the hook into the next division, shown once the current one is complete. Text only. */
+.career-lead {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid #f5c542;
+  background: rgba(245, 197, 66, 0.08);
+  font-style: italic;
+  line-height: 1.45;
 }

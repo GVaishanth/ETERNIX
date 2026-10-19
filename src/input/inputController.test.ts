@@ -9,10 +9,12 @@ import { InputController, isFormControlTarget } from './inputController';
 class FakeKeyEvent extends Event {
   readonly code: string;
   readonly repeat: boolean;
-  constructor(type: 'keydown' | 'keyup', code: string, repeat = false) {
+  readonly shiftKey: boolean;
+  constructor(type: 'keydown' | 'keyup', code: string, repeat = false, shiftKey = false) {
     super(type, { cancelable: true });
     this.code = code;
     this.repeat = repeat;
+    this.shiftKey = shiftKey;
   }
 }
 
@@ -35,8 +37,8 @@ function setup() {
   const doc = new FakeDocument();
   const controller = new InputController();
   const detach = controller.attach(view, doc);
-  const press = (code: string, repeat = false) => {
-    const event = new FakeKeyEvent('keydown', code, repeat);
+  const press = (code: string, repeat = false, shiftKey = false) => {
+    const event = new FakeKeyEvent('keydown', code, repeat, shiftKey);
     view.dispatchEvent(event);
     return event;
   };
@@ -77,6 +79,22 @@ describe('held-key tracking', () => {
     expect(controller.sample().throttle).toBe(0);
   });
 
+  it('reports tab visibility to the optional callback, through the one visibility listener', () => {
+    const view = new EventTarget();
+    const doc = new FakeDocument();
+    const seen: boolean[] = [];
+    const controller = new InputController();
+    const detach = controller.attach(view, doc, { onVisibilityChange: (hidden) => seen.push(hidden) });
+    doc.hidden = true;
+    doc.dispatchEvent(new Event('visibilitychange'));
+    doc.hidden = false;
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(seen).toEqual([true, false]);
+    detach();
+    doc.dispatchEvent(new Event('visibilitychange'));
+    expect(seen).toEqual([true, false]);
+  });
+
   it('keeps held keys when the tab becomes visible again', () => {
     const { doc, controller, press } = setup();
     press('KeyW');
@@ -104,8 +122,14 @@ describe('action queue', () => {
   it('queues reset and debug actions in order', () => {
     const { controller, press } = setup();
     press('KeyR');
-    press('Backquote');
+    press('Backquote', false, true);
     expect(controller.consumeActions()).toEqual(['reset', 'debugPanel']);
+  });
+
+  it('ignores a plain backquote: the diagnostics panel needs Shift', () => {
+    const { controller, press } = setup();
+    press('Backquote');
+    expect(controller.consumeActions()).toEqual([]);
   });
 
   it('accepts actions queued from UI controls', () => {

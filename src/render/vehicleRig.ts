@@ -49,10 +49,18 @@ export function resolveVehicleRig(root: Group): VehicleRig | null {
   return { root, bodyPivot, pivotRestY: bodyPivot.position.y, wheels };
 }
 
-/** Writes the authoritative pose and the cosmetic body and wheel state to the rig. */
-export function applyVehicleRig(rig: VehicleRig, pose: VehicleState, body: BodyState): void {
+/**
+ * Writes the authoritative pose and the cosmetic body and wheel state to the rig.
+ *
+ * The root sits on the rear axle, at the road height there. The wheels are children of the root, so without a pitch the
+ * front wheels stay at rear-axle height: on a slope they sink into the road ahead (uphill) or float above it (downhill).
+ * roadPitchRadians is the road's slope along the car's heading, positive uphill (atan of the grade). The root pitches
+ * about the rear axle, so the front axle lands on the road. Order YXZ: pitch in the car's own frame, then yaw.
+ */
+export function applyVehicleRig(rig: VehicleRig, pose: VehicleState, body: BodyState, roadPitchRadians = 0): void {
   rig.root.position.set(pose.position.x, pose.position.y, pose.position.z);
-  rig.root.rotation.set(0, pose.yaw, 0);
+  rig.root.rotation.order = 'YXZ';
+  rig.root.rotation.set(0 - roadPitchRadians, pose.yaw, 0);
 
   rig.bodyPivot.position.y = rig.pivotRestY + body.heave;
   rig.bodyPivot.rotation.set(body.pitch, 0, body.roll);

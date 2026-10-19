@@ -5,6 +5,7 @@ import { RAD_TO_DEG } from '../core/units';
 import {
   computeGripReduction,
   computeMaxSteerAngle,
+  computePowerOversteer,
   computeYawRate,
   createVehicleState,
   getDriveDirection,
@@ -154,9 +155,23 @@ describe('handbrake and grip', () => {
     expect(state.speed).toBe(0);
   });
 
-  it('overrides throttle while held', () => {
-    const state = run(movingAt(10), input({ throttle: 1, handbrake: 1 }), 0.5);
-    expect(state.speed).toBeLessThan(10);
+  it('lets throttle work against the handbrake: the car slows less than with the handbrake alone', () => {
+    const throttleHeld = run(movingAt(10), input({ throttle: 1, handbrake: 1 }), 0.5);
+    const handbrakeOnly = run(movingAt(10), HANDBRAKE, 0.5);
+    expect(throttleHeld.speed).toBeGreaterThan(handbrakeOnly.speed);
+  });
+
+  it('never reverses the car while the handbrake and throttle are both held', () => {
+    let state = movingAt(0);
+    for (let i = 0; i < 60 * 3; i += 1) {
+      state = stepVehicle(state, input({ throttle: 1, handbrake: 1 }), VEHICLE_CONFIG, DT);
+      expect(state.speed).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('still brings the car to rest when the handbrake is held and the throttle is released', () => {
+    const state = run(movingAt(15), HANDBRAKE, 5);
+    expect(state.speed).toBe(0);
   });
 
   it('blocks reverse creep and reverse acceleration while held', () => {
@@ -174,12 +189,39 @@ describe('handbrake and grip', () => {
     expect(isDrifting(slowHeld, VEHICLE_CONFIG)).toBe(false);
   });
 
-  it('never reports a drift for ordinary full-lock cornering without the handbrake', () => {
+  it('never reports a drift when coasting at full lock with no handbrake and no throttle', () => {
     let state = movingAt(12);
     for (let i = 0; i < 60 * 3; i += 1) {
-      state = stepVehicle(state, input({ steer: 1, throttle: 1 }), VEHICLE_CONFIG, DT);
+      state = stepVehicle(state, input({ steer: 1 }), VEHICLE_CONFIG, DT);
       expect(isDrifting(state, VEHICLE_CONFIG)).toBe(false);
     }
+  });
+
+  it('adds no power oversteer without throttle, at low speed, or without steering', () => {
+    expect(computePowerOversteer(0, 0.2, 30, VEHICLE_CONFIG)).toBe(0);
+    expect(computePowerOversteer(1, 0.2, VEHICLE_CONFIG.driftMinSpeedMps, VEHICLE_CONFIG)).toBe(0);
+    expect(computePowerOversteer(1, 0, 30, VEHICLE_CONFIG)).toBe(0);
+  });
+
+  it('scales power oversteer with throttle and steering, capped at the configured grip loss', () => {
+    const full = computePowerOversteer(1, VEHICLE_CONFIG.steerAngleHighSpeedRadians, 30, VEHICLE_CONFIG);
+    const half = computePowerOversteer(0.5, VEHICLE_CONFIG.steerAngleHighSpeedRadians, 30, VEHICLE_CONFIG);
+    expect(full).toBeCloseTo(VEHICLE_CONFIG.powerOversteerGripLoss, 9);
+    expect(half).toBeCloseTo(full / 2, 9);
+    expect(computePowerOversteer(1, 10, 30, VEHICLE_CONFIG)).toBeLessThanOrEqual(VEHICLE_CONFIG.powerOversteerGripLoss);
+  });
+
+  it('lets throttle and steering start a slide without the handbrake, and turns it off at zero', () => {
+    const slipAfter = (grip: number): number => {
+      const cfg = { ...VEHICLE_CONFIG, powerOversteerGripLoss: grip };
+      let state = movingAt(20);
+      for (let i = 0; i < 90; i += 1) {
+        state = stepVehicle(state, input({ steer: 1, throttle: 1 }), cfg, DT);
+      }
+      return Math.abs(slipAngleRadians(state)) * RAD_TO_DEG;
+    };
+    expect(slipAfter(VEHICLE_CONFIG.powerOversteerGripLoss)).toBeGreaterThan(slipAfter(0));
+    expect(slipAfter(0)).toBeLessThan(VEHICLE_CONFIG.driftSlipThresholdDegrees);
   });
 
   it('does not spin the car when the handbrake is held on a straight road', () => {

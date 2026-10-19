@@ -12,8 +12,10 @@ export const KEY_BINDINGS = {
   handbrake: ['Space'],
 } as const;
 
-/** `roadDebug` and `overview` are development views. The loop ignores them in production builds. */
-export type GameAction = 'pause' | 'reset' | 'debugPanel' | 'roadDebug' | 'overview';
+/** `roadDebug`, `overview`, `trafficReset`, and `devReset` are development views and tools. The loop ignores them in production builds. */
+/** `raceConfirm` (E) and `raceCancel` (Q) act on the race in progress, or on the event marker nearby. See RaceController. */
+/** `garage` (V) opens or closes the garage at the city entrance. It is refused during a race or a pursuit (garageGate.ts). */
+export type GameAction = 'pause' | 'reset' | 'debugPanel' | 'roadDebug' | 'overview' | 'trafficReset' | 'devReset' | 'raceConfirm' | 'raceCancel' | 'garage' | 'career' | 'timeOfDay' | 'weather' | 'quality' | 'environmentAuto';
 
 export const ACTION_BINDINGS: Readonly<Record<GameAction, readonly string[]>> = {
   pause: ['Escape'],
@@ -21,7 +23,20 @@ export const ACTION_BINDINGS: Readonly<Record<GameAction, readonly string[]>> = 
   debugPanel: ['Backquote'],
   roadDebug: ['KeyG'],
   overview: ['KeyO'],
+  trafficReset: ['KeyT'],
+  devReset: ['KeyY'],
+  raceConfirm: ['KeyE'],
+  raceCancel: ['KeyQ'],
+  garage: ['KeyV'],
+  career: ['KeyC'],
+  timeOfDay: ['KeyN'],
+  weather: ['KeyM'],
+  quality: ['KeyU'],
+  environmentAuto: ['KeyL'],
 };
+
+/** Actions that need Shift held too. Shift + ` opens the diagnostics panel, in every build. Plain ` does nothing. */
+const SHIFT_REQUIRED_ACTIONS: ReadonlySet<GameAction> = new Set<GameAction>(['debugPanel']);
 
 /** Keys that would otherwise scroll the page or activate focused controls while driving. */
 const PREVENT_DEFAULT_CODES: ReadonlySet<string> = new Set([
@@ -50,10 +65,12 @@ export function shouldPreventDefault(code: string): boolean {
   return PREVENT_DEFAULT_CODES.has(code);
 }
 
-/** Returns the action bound to a key, if any. */
-export function actionForKeyCode(code: string): GameAction | null {
+/** Returns the action bound to a key, if any. Shift-only actions need shiftKey. */
+export function actionForKeyCode(code: string, shiftKey = false): GameAction | null {
   for (const action of Object.keys(ACTION_BINDINGS) as GameAction[]) {
-    if (ACTION_BINDINGS[action].includes(code)) return action;
+    if (!ACTION_BINDINGS[action].includes(code)) continue;
+    if (SHIFT_REQUIRED_ACTIONS.has(action) && !shiftKey) continue;
+    return action;
   }
   return null;
 }

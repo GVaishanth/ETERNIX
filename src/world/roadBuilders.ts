@@ -2,7 +2,7 @@ import { forwardFromYaw } from '../core/coordinates';
 import type { Vec3 } from '../core/types';
 import { ROAD_NETWORK_CONFIG, NETWORK_BOUNDARY_HALF_WIDTH_METERS, NETWORK_LANE_COUNT } from '../config/roadConfig';
 import { arcCenterline, straightCenterline, type Pose } from './roadGeometry';
-import type { BoundaryKind, RoadPort, RoadSegment, RoadType } from './roadTypes';
+import type { BoundaryKind, CenterlineSample, RoadPort, RoadSegment, RoadType, SurfaceType } from './roadTypes';
 
 /*
  * Modular road segment builders. Each function returns a complete RoadSegment with explicit ports, so a network is
@@ -32,11 +32,15 @@ export interface StraightOptions {
   id: string;
   roadType: RoadType;
   start: Pose;
+  /** Height at the far end, metres. The road rises or falls evenly from start.position.y. Default: level. */
+  endHeightMeters?: number;
   lengthMeters: number;
   speedLimitMps: number;
   startTerminal?: boolean;
   endTerminal?: boolean;
   profile?: RoadProfile;
+  /** Road surface. Default: asphalt. */
+  surface?: SurfaceType;
 }
 
 export interface ArcOptions {
@@ -50,10 +54,15 @@ export interface ArcOptions {
   profile?: RoadProfile;
 }
 
+export type JunctionArm = 'north' | 'east' | 'south' | 'west';
+export const ALL_JUNCTION_ARMS: readonly JunctionArm[] = ['north', 'east', 'south', 'west'];
+
 export interface JunctionOptions {
   id: string;
   centre: Vec3;
   profile?: RoadProfile;
+  /** Arms that connect to a road. Defaults to all four. Missing sides become barriers (see roadMeshData). */
+  arms?: readonly JunctionArm[];
 }
 
 function headingOfEndPoint(centerlineHeadings: number[]): number {
@@ -75,9 +84,20 @@ function sharedFields(profile: RoadProfile, boundary: BoundaryKind) {
   };
 }
 
+/** The same centreline with its height rising evenly from y0 at s = 0 to y1 at the far end. */
+function riseAlong(line: CenterlineSample, y0: number, y1: number): CenterlineSample {
+  const total = line.s[line.s.length - 1] ?? 0;
+  return {
+    ...line,
+    points: line.points.map((point, k) => ({ ...point, y: total > 0 ? y0 + ((y1 - y0) * (line.s[k] ?? 0)) / total : y0 })),
+  };
+}
+
 export function buildStraight(options: StraightOptions): RoadSegment {
   const profile = options.profile ?? NETWORK_PROFILE;
-  const centerline = straightCenterline(options.start, options.lengthMeters, profile.maxSampleSpacingMeters);
+  const y0 = options.start.position.y;
+  const y1 = options.endHeightMeters ?? y0;
+  const centerline = riseAlong(straightCenterline(options.start, options.lengthMeters, profile.maxSampleSpacingMeters), y0, y1);
   const last = centerline.points[centerline.points.length - 1];
   const endHeading = headingOfEndPoint(centerline.headings);
   const forward = forwardFromYaw(options.start.heading);
@@ -90,15 +110,15 @@ export function buildStraight(options: StraightOptions): RoadSegment {
       position: { ...options.start.position },
       outward: back,
       widthMeters: profile.roadWidthMeters,
-      elevationMeters: 0,
+      elevationMeters: y0,
       terminal: options.startTerminal === true,
     },
     {
       id: 'end',
-      position: { x: last?.x ?? 0, y: 0, z: last?.z ?? 0 },
+      position: { x: last?.x ?? 0, y: y1, z: last?.z ?? 0 },
       outward: endForward,
       widthMeters: profile.roadWidthMeters,
-      elevationMeters: 0,
+      elevationMeters: y1,
       terminal: options.endTerminal === true,
     },
   ];
@@ -115,6 +135,9 @@ export function buildStraight(options: StraightOptions): RoadSegment {
     junction: null,
     speedLimitMps: options.speedLimitMps,
     ...sharedFields(profile, 'guardrail'),
+    surface: options.surface ?? 'asphalt',
+    // The segment is at its start port's height, as the validator requires.
+    elevationMeters: y0,
   };
 }
 
@@ -175,12 +198,17 @@ export function buildJunction(options: JunctionOptions): RoadSegment {
   const profile = options.profile ?? NETWORK_PROFILE;
   const h = profile.boundaryHalfWidthMeters;
   const c = options.centre;
-  const ports: RoadPort[] = [
-    { id: 'north', position: { x: c.x, y: 0, z: c.z + h }, outward: { x: 0, y: 0, z: 1 }, widthMeters: profile.roadWidthMeters, elevationMeters: 0, terminal: false },
-    { id: 'east', position: { x: c.x + h, y: 0, z: c.z }, outward: { x: 1, y: 0, z: 0 }, widthMeters: profile.roadWidthMeters, elevationMeters: 0, terminal: false },
-    { id: 'south', position: { x: c.x, y: 0, z: c.z - h }, outward: { x: 0, y: 0, z: -1 }, widthMeters: profile.roadWidthMeters, elevationMeters: 0, terminal: false },
-    { id: 'west', position: { x: c.x - h, y: 0, z: c.z }, outward: { x: -1, y: 0, z: 0 }, widthMeters: profile.roadWidthMeters, elevationMeters: 0, terminal: false },
+  const arms = new Set<JunctionArm>(options.arms ?? ALL_JUNCTION_ARMS);
+  // A junction pad is flat at the centre's height. Every arm meets it at that height.
+  const y = c.y;
+  const allPorts: RoadPort[] = [
+    { id: 'north', position: { x: c.x, y, z: c.z + h }, outward: { x: 0, y: 0, z: 1 }, widthMeters: profile.roadWidthMeters, elevationMeters: y, terminal: false },
+    { id: 'east', position: { x: c.x + h, y, z: c.z }, outward: { x: 1, y: 0, z: 0 }, widthMeters: profile.roadWidthMeters, elevationMeters: y, terminal: false },
+    { id: 'south', position: { x: c.x, y, z: c.z - h }, outward: { x: 0, y: 0, z: -1 }, widthMeters: profile.roadWidthMeters, elevationMeters: y, terminal: false },
+    { id: 'west', position: { x: c.x - h, y, z: c.z }, outward: { x: -1, y: 0, z: 0 }, widthMeters: profile.roadWidthMeters, elevationMeters: y, terminal: false },
   ];
+  const ports = allPorts.filter((port) => arms.has(port.id as JunctionArm));
+  if (ports.length < 2) throw new Error(`Junction ${options.id} needs at least two arms, has ${ports.length}.`);
   return {
     id: options.id,
     kind: 'junction',
@@ -190,9 +218,10 @@ export function buildJunction(options: JunctionOptions): RoadSegment {
     lengthMeters: 2 * h,
     curvatureRadiusMeters: null,
     arc: null,
-    junction: { centre: { x: c.x, y: 0, z: c.z }, halfSizeMeters: h },
+    junction: { centre: { x: c.x, y, z: c.z }, halfSizeMeters: h },
     speedLimitMps: 11,
     ...sharedFields(profile, 'none'),
+    elevationMeters: y,
   };
 }
 

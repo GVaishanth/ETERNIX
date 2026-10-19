@@ -2,8 +2,9 @@ import type { MouseEvent } from 'react';
 import type { GameAction } from '../input/keyBindings';
 import type { DriveDirection } from '../simulation/vehicle';
 import { useAppStore } from '../state/appStore';
+import { useConfirmUiStore } from '../state/confirmUiStore';
+import { ControlsInfo } from './ControlsInfo';
 
-const DEBUG_HINT = import.meta.env.DEV ? ' · ` debug panel' : '';
 const DIRECTION_LABEL: Record<DriveDirection, string> = { drive: 'D', reverse: 'R', neutral: 'N' };
 /** A 240-degree arc, from lower-left, clockwise over the top, to lower-right. */
 const GAUGE_ARC_PATH = 'M 16.7 85 A 50 50 0 1 1 103.3 85';
@@ -11,6 +12,8 @@ const GAUGE_ARC_PATH = 'M 16.7 85 A 50 50 0 1 1 103.3 85';
 export interface HudProps {
   /** Routes HUD buttons through the same action path as the keyboard. */
   onAction: (action: GameAction) => void;
+  /** Leaves the game in-page (the embedded game). Without it, Leave opens the front page as a page. */
+  onLeave?: () => void;
 }
 
 /**
@@ -18,7 +21,7 @@ export interface HudProps {
  * speed (km/h and mph), an arc gauge scaled to the forward top speed, drive direction (D / R / N), and a DRIFT badge.
  * No RPM and no gear are shown, because the model does not simulate them.
  */
-export function Hud({ onAction }: HudProps) {
+export function Hud({ onAction, onLeave }: HudProps) {
   const speedKph = useAppStore((state) => state.hud.speedKph);
   const speedMph = useAppStore((state) => state.hud.speedMph);
   const speedFraction = useAppStore((state) => state.hud.speedFraction);
@@ -33,6 +36,20 @@ export function Hud({ onAction }: HudProps) {
   };
 
   const gaugeValue = Math.min(Math.max(speedFraction, 0), 1) * 100;
+
+  const askLeave = (event: MouseEvent<HTMLButtonElement>) => {
+    event.currentTarget.blur();
+    useConfirmUiStore.getState().ask({
+      title: 'Leave the game?',
+      message: 'Do you really want to leave? Your current drive is not saved.',
+      confirmLabel: 'Leave',
+      cancelLabel: 'Stay',
+      onConfirm: () => {
+        if (onLeave) onLeave();
+        else window.location.assign('./index.html');
+      },
+    });
+  };
 
   return (
     <>
@@ -65,9 +82,7 @@ export function Hud({ onAction }: HudProps) {
             DRIFT
           </div>
         ) : null}
-        <div className="hud-hint">
-          W / ↑ throttle · S / ↓ brake · A / D steer · Space handbrake · Esc pause · R reset{DEBUG_HINT}
-        </div>
+        <ControlsInfo classPrefix="hud" />
       </div>
 
       <div className="hud-controls">
@@ -77,6 +92,13 @@ export function Hud({ onAction }: HudProps) {
         </button>
         <button type="button" className="hud-button" onClick={press('reset')}>
           Reset
+        </button>
+        <button type="button" className="hud-button hud-door" aria-label="Leave to the front page" title="Leave to the front page" onClick={askLeave}>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 21h18" />
+            <path d="M5 21V4.5A1.5 1.5 0 0 1 6.5 3h11A1.5 1.5 0 0 1 19 4.5V21" />
+            <circle cx="15" cy="12.5" r="1" fill="currentColor" stroke="none" />
+          </svg>
         </button>
       </div>
     </>
